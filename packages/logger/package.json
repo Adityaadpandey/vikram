@@ -1,0 +1,19 @@
+{
+	"name": "@repo/logger",
+	"version": "1.0.0",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"build": "tsc",
+		"build:pack": "tsc && npm pack"
+	},
+	"dependencies": {
+		"chalk": "^5.4.1",
+		"winston": "^3.17.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.13.13",
+		"typescript": "^5.8.2"
+	}
+}
