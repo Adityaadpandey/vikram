@@ -8,36 +8,70 @@ generator client {
   output   = "../generated"
 }
 
-
-model User{
-  id String @id
-  phone String @unique
-  name String?
+model User {
+  id          String   @id @default(uuid())
+  armyId      String   @unique
+  phone       String   @unique
+  name        String?
   designation String?
-  Friends Friend[] @relation("UserFriends")
-  FriendOf Friend[] @relation("FriendOf")
-  keys Key[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  keys             Key[]      @relation("UserKeys")
+  Friends          Friend[]   @relation("UserFriends")
+  FriendOf         Friend[]   @relation("FriendOfUser")
+  SentMessages     Message[]  @relation("SentMessages")
+  ReceivedMessages Message[]  @relation("ReceivedMessages")
+
+  @@map("users")
 }
 
-model Key{
-  id String @id @default(cuid())
-  userId String
-  user User @relation(fields: [userId], references: [id])
-  publicKey String
-  privateKey String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Key {
+  id         String   @id @default(uuid())
+  userId     String
+  publicKey  String   @db.Text
+  privateKey String   @db.Text // Encrypted with seed phrase
+  createdAt  DateTime @default(now())
+
+  user User @relation("UserKeys", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("keys")
 }
 
-model Friend{
-  friendId String @id @default(cuid())
-  userId String
-  user User @relation("UserFriends", fields: [userId], references: [id])
-  friend User @relation("FriendOf", fields: [friendId], references: [id])
+model Friend {
+  id        String   @id @default(uuid())
+  userId    String
+  friendId  String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+
+  user   User @relation("UserFriends", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendOfUser", fields: [friendId], references: [id], onDelete: Cascade)
 
   @@unique([userId, friendId])
+  @@index([userId])
+  @@index([friendId])
+  @@map("friends")
+}
+
+model Message {
+  id               String   @id
+  senderId         String
+  recipientId      String
+  encryptedContent String   @db.Text
+  encryptedKey     String   @db.Text
+  iv               String
+  status           String   // 'sent', 'delivered', 'read'
+  timestamp        DateTime
+  createdAt        DateTime @default(now())
+
+  sender    User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([timestamp])
+  @@index([status])
+  @@map("messages")
 }

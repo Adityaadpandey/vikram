@@ -7,6 +7,7 @@ import express, { NextFunction, Request, Response } from "express";
 import { config } from "./config";
 import logger from "./config/logger";
 import { connectRedis } from "./config/redis";
+import { authRouter } from "./router/auth";
 import { setupGracefulShutdown } from "./utils/shutDown";
 import { createWebSocketServer } from "./ws/server";
 
@@ -15,6 +16,8 @@ import { createWebSocketServer } from "./ws/server";
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+app.use("/auth", authRouter);
 
 app.use((req: Request, res: Response) => {
   logger.warn(`Resource not found: ${req.method} ${req.url}`);

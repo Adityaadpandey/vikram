@@ -26,6 +26,6 @@ export const sendSMS = async (otp: string, phone: string) => {
     return message.sid;
   } catch (error) {
     logger.error("Error sending SMS:", error);
-    throw new Error("Failed to send SMS");
+    // throw new Error("Failed to send SMS");
   }
 };

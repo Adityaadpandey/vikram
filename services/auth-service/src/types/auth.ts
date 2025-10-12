@@ -3,11 +3,12 @@ import { Request } from "express";
 
 export interface JwtPayload {
   userId: string;
-  email: string;
+  phone: string;
+  armyId: string;
   iat?: number;
   exp?: number;
 }
 
 export interface AuthenticatedRequest extends Request {
-  user?: Pick<User, "id" | "email" | "name">;
+  user?: Pick<User, "id" | "phone" | "armyId" | "name">;
 }
