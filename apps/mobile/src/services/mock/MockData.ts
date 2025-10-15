@@ -24,7 +24,7 @@ export const TEST_USERS = {
   personnel: {
     armyId: "DEF2025001",
     phone: "+919876543210",
-    name: "Captain Miller",
+    name: "Captain Arjun Singh",
     rank: "Captain",
     unit: "5th Infantry Division",
     seedPhrase:
@@ -33,7 +33,7 @@ export const TEST_USERS = {
   veteran: {
     armyId: "VET2020045",
     phone: "+919876543211",
-    name: "Major Johnson",
+    name: "Major Rakesh Sharma",
     rank: "Major (Retd.)",
     unit: "Special Forces",
     seedPhrase:
@@ -47,7 +47,7 @@ export const MOCK_OTP = "123456";
 export const MOCK_DIRECT_CHATS = [
   {
     id: "d1",
-    name: "Capt. Miller",
+    name: "Capt. Arjun Singh",
     members: 2,
     unread: 2,
     lastMessage: "See you at the briefing",
@@ -55,7 +55,7 @@ export const MOCK_DIRECT_CHATS = [
   },
   {
     id: "d2",
-    name: "Lt. Johnson",
+    name: "Lt. Priya Nair",
     members: 2,
     unread: 0,
     lastMessage: "Roger that",
@@ -63,7 +63,7 @@ export const MOCK_DIRECT_CHATS = [
   },
   {
     id: "d3",
-    name: "Sgt. Thompson",
+    name: "Sgt. Manoj Kumar",
     members: 2,
     unread: 1,
     lastMessage: "Equipment ready",
@@ -99,23 +99,17 @@ export const MOCK_GROUPS = [
   },
 ];
 
-// export const MOCK_MESSAGES = [
-//   { id: '1', sender: 'Capt. Miller', content: 'Team, briefing at 1400', timestamp: '10:30 AM', isOwn: false },
-//   { id: '2', sender: 'You', content: 'Acknowledged', timestamp: '10:32 AM', isOwn: true },
-//   { id: '3', sender: 'Lt. Johnson', content: 'Will be there', timestamp: '10:35 AM', isOwn: false },
-// ];
-
 export const MOCK_PENDING_MEMBERS = [
   {
     id: "1",
-    name: "Sgt. Thompson",
+    name: "Sgt. Manoj Kumar",
     rank: "Sergeant",
     unit: "5th Infantry",
     requestDate: "2 hours ago",
   },
   {
     id: "2",
-    name: "Cpl. Davis",
+    name: "Cpl. Anjali Verma",
     rank: "Corporal",
     unit: "3rd Battalion",
     requestDate: "1 day ago",
@@ -179,7 +173,7 @@ export const MOCK_CONTACTS: Contact[] = [
   {
     id: "c1",
     serviceId: "DEF2025001",
-    name: "Capt. John Miller",
+    name: "Capt. Arjun Singh",
     rank: "Captain",
     unit: "5th Infantry Division",
     relationType: "professional",
@@ -189,7 +183,7 @@ export const MOCK_CONTACTS: Contact[] = [
   {
     id: "c2",
     serviceId: "DEF2025002",
-    name: "Lt. Sarah Johnson",
+    name: "Lt. Priya Nair",
     rank: "Lieutenant",
     unit: "3rd Artillery Regiment",
     relationType: "professional",
@@ -199,7 +193,7 @@ export const MOCK_CONTACTS: Contact[] = [
   {
     id: "c3",
     serviceId: "DEF2025003",
-    name: "Maj. Robert Davis",
+    name: "Maj. Rakesh Sharma",
     rank: "Major",
     unit: "2nd Armored Division",
     relationType: "professional",
@@ -210,7 +204,7 @@ export const MOCK_CONTACTS: Contact[] = [
   {
     id: "c4",
     serviceId: "DEF2025004",
-    name: "Sgt. Michael Brown",
+    name: "Sgt. Manoj Kumar",
     rank: "Sergeant",
     unit: "7th Special Forces",
     relationType: "professional",
@@ -220,7 +214,7 @@ export const MOCK_CONTACTS: Contact[] = [
   {
     id: "c5",
     serviceId: "DEF2025005",
-    name: "Cpl. Emily Wilson",
+    name: "Cpl. Anjali Verma",
     rank: "Corporal",
     unit: "4th Medical Corps",
     relationType: "professional",
@@ -230,7 +224,7 @@ export const MOCK_CONTACTS: Contact[] = [
   {
     id: "c6",
     serviceId: "FAM001",
-    name: "David Miller",
+    name: "Rajesh Singh",
     relation: "Father",
     relationType: "family",
     phone: "+91 98765 43215",
@@ -239,7 +233,7 @@ export const MOCK_CONTACTS: Contact[] = [
   {
     id: "c7",
     serviceId: "FAM002",
-    name: "Mary Miller",
+    name: "Sunita Singh",
     relation: "Mother",
     relationType: "family",
     phone: "+91 98765 43216",
@@ -248,7 +242,7 @@ export const MOCK_CONTACTS: Contact[] = [
   {
     id: "c8",
     serviceId: "DEF2025006",
-    name: "Col. James Anderson",
+    name: "Col. Vikram Patel",
     rank: "Colonel",
     unit: "1st Airborne Division",
     relationType: "professional",
@@ -263,7 +257,7 @@ export const MOCK_PENDING_REQUESTS: PendingRequest[] = [
   {
     id: "pr1",
     serviceId: "DEF2025010",
-    name: "Sgt. Thomas Thompson",
+    name: "Sgt. Rohit Mehra",
     rank: "Sergeant",
     unit: "9th Infantry Regiment",
     relationType: "professional",
@@ -274,7 +268,7 @@ export const MOCK_PENDING_REQUESTS: PendingRequest[] = [
   {
     id: "pr2",
     serviceId: "DEF2025011",
-    name: "Cpl. Lisa Davis",
+    name: "Cpl. Neha Gupta",
     rank: "Corporal",
     unit: "6th Support Battalion",
     relationType: "professional",
@@ -290,14 +284,14 @@ export const MOCK_CHATS: Chat[] = [
     id: "chat1",
     name: "Alpha Squad",
     type: "group",
-    lastMessage: "@JohnMiller Please review the mission brief",
+    lastMessage: "@ArjunSingh Please review the mission brief",
     timestamp: "10:30 AM",
     unread: 3,
     members: ["c1", "c2", "c3", "c4"],
   },
   {
     id: "chat2",
-    name: "Lt. Sarah Johnson",
+    name: "Lt. Priya Nair",
     type: "direct",
     lastMessage: "The equipment has arrived",
     timestamp: "09:15 AM",
@@ -308,14 +302,14 @@ export const MOCK_CHATS: Chat[] = [
     id: "chat3",
     name: "Family Group",
     type: "group",
-    lastMessage: "Stay safe son!",
+    lastMessage: "Stay safe beta!",
     timestamp: "Yesterday",
     unread: 0,
     members: ["c6", "c7"],
   },
   {
     id: "chat4",
-    name: "Maj. Robert Davis",
+    name: "Maj. Rakesh Sharma",
     type: "direct",
     lastMessage: "Meeting at 1500 hours",
     timestamp: "2 days ago",
@@ -330,8 +324,8 @@ export const MOCK_MESSAGES: { [chatId: string]: Message[] } = {
     {
       id: "m1",
       senderId: "c2",
-      senderName: "Lt. Sarah Johnson",
-      text: "@JohnMiller Please review the mission brief",
+      senderName: "Lt. Priya Nair",
+      text: "@ArjunSingh Please review the mission brief",
       timestamp: "10:30 AM",
       mentions: ["c1"],
       type: "text",
@@ -339,7 +333,7 @@ export const MOCK_MESSAGES: { [chatId: string]: Message[] } = {
     {
       id: "m2",
       senderId: "c1",
-      senderName: "Capt. John Miller",
+      senderName: "Capt. Arjun Singh",
       text: "Roger that. Reviewing now.",
       timestamp: "10:32 AM",
       isStarred: true,
@@ -348,7 +342,7 @@ export const MOCK_MESSAGES: { [chatId: string]: Message[] } = {
     {
       id: "m3",
       senderId: "c4",
-      senderName: "Sgt. Michael Brown",
+      senderName: "Sgt. Manoj Kumar",
       text: "Equipment check completed",
       timestamp: "10:35 AM",
       type: "text",
@@ -356,8 +350,8 @@ export const MOCK_MESSAGES: { [chatId: string]: Message[] } = {
     {
       id: "m4",
       senderId: "c3",
-      senderName: "Maj. Robert Davis",
-      text: "@JohnMiller @SarahJohnson Mission parameters confirmed",
+      senderName: "Maj. Rakesh Sharma",
+      text: "@ArjunSingh @PriyaNair Mission parameters confirmed",
       timestamp: "10:40 AM",
       mentions: ["c1", "c2"],
       isStarred: true,
@@ -368,7 +362,7 @@ export const MOCK_MESSAGES: { [chatId: string]: Message[] } = {
     {
       id: "m5",
       senderId: "c2",
-      senderName: "Lt. Sarah Johnson",
+      senderName: "Lt. Priya Nair",
       text: "The equipment has arrived",
       timestamp: "09:15 AM",
       type: "text",
@@ -386,16 +380,16 @@ export const MOCK_MESSAGES: { [chatId: string]: Message[] } = {
     {
       id: "m7",
       senderId: "c6",
-      senderName: "David Miller",
-      text: "How are you doing son?",
+      senderName: "Rajesh Singh",
+      text: "How are you doing beta?",
       timestamp: "Yesterday",
       type: "text",
     },
     {
       id: "m8",
       senderId: "c7",
-      senderName: "Mary Miller",
-      text: "Stay safe son!",
+      senderName: "Sunita Singh",
+      text: "Stay safe beta!",
       timestamp: "Yesterday",
       isStarred: true,
       type: "text",
