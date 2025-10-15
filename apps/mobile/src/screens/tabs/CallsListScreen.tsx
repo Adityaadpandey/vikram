@@ -24,7 +24,7 @@ interface Call {
 const MOCK_CALLS: Call[] = [
   {
     id: "1",
-    name: "Capt. Miller",
+    name: "Rahul Sharma",
     type: "incoming",
     callType: "video",
     timestamp: "10:30 AM",
@@ -32,7 +32,7 @@ const MOCK_CALLS: Call[] = [
   },
   {
     id: "2",
-    name: "Lt. Johnson",
+    name: "Priya Singh",
     type: "outgoing",
     callType: "voice",
     timestamp: "Yesterday",
@@ -40,14 +40,14 @@ const MOCK_CALLS: Call[] = [
   },
   {
     id: "3",
-    name: "Sgt. Thompson",
+    name: "Amit Patel",
     type: "missed",
     callType: "voice",
     timestamp: "2 days ago",
   },
   {
     id: "4",
-    name: "Alpha Squad",
+    name: "Team Bharat",
     type: "outgoing",
     callType: "video",
     timestamp: "3 days ago",
@@ -69,7 +69,7 @@ export const CallsListScreen: React.FC = () => {
   const simulateIncomingCall = async () => {
     await CallNotificationService.showIncomingCallNotification({
       callId: Date.now().toString(),
-      callerName: "Capt. Miller",
+      callerName: "Captain Arjun Singh",
       isVideoCall: true,
       timestamp: Date.now(),
     });

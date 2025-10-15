@@ -20,10 +20,15 @@ interface Contact {
 }
 
 const MOCK_CONTACTS: Contact[] = [
-  { id: "1", name: "Capt. Miller", relation: "Captain", selected: false },
-  { id: "2", name: "Lt. Johnson", relation: "Lieutenant", selected: false },
-  { id: "3", name: "Sgt. Thompson", relation: "Sergeant", selected: false },
-  { id: "4", name: "Cpl. Davis", relation: "Corporal", selected: false },
+  { id: "1", name: "Capt. Vikram Singh", relation: "Captain", selected: false },
+  {
+    id: "2",
+    name: "Lt. Anjali Sharma",
+    relation: "Lieutenant",
+    selected: false,
+  },
+  { id: "3", name: "Sgt. Rajesh Kumar", relation: "Sergeant", selected: false },
+  { id: "4", name: "Cpl. Priya Patel", relation: "Corporal", selected: false },
 ];
 
 export const CreateGroupScreen: React.FC = () => {

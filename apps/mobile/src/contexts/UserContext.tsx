@@ -24,7 +24,7 @@ interface UserContextType {
 
 const defaultProfile: UserProfile = {
   serviceId: "DEF2025001",
-  name: "Captain Miller",
+  name: "Captain Arjun Singh",
   rank: "Captain",
   unit: "5th Infantry Division",
   phone: "+91 98765 43210",
