@@ -1,243 +1,218 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { View, Text, TouchableOpacity, Alert, ScrollView } from "react-native";
+import { useRoute, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { AuthService } from "../services/auth/AuthService";
-import { TEST_USERS } from "../services/mock/MockData";
 import { useTheme } from "../contexts/ThemeContext";
+import { SecureStorage } from "../services/security/SecureStorage";
+import * as Clipboard from "expo-clipboard";
 
-interface SeedPhraseScreenProps {
-  onSuccess: () => void;
-}
-
-export const SeedPhraseScreen: React.FC<SeedPhraseScreenProps> = ({
-  onSuccess,
-}) => {
-  const navigation = useNavigation<any>();
+export const SeedPhraseScreen: React.FC = () => {
   const route = useRoute<any>();
-  const { theme, isDark } = useTheme();
-  const { armyId, phone, publicKey, encryptedPrivateKey } = route.params;
+  const navigation = useNavigation<any>();
+  const { theme } = useTheme();
+  const { seedPhrase, publicKey, userId } = route.params;
+  const [confirmed, setConfirmed] = useState(false);
 
-  const [seedPhrase, setSeedPhrase] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const words = seedPhrase.split(" ");
 
-  const wordCount = seedPhrase
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w).length;
-
-  const handleVerifySeedPhrase = async () => {
-    const trimmedPhrase = seedPhrase.trim();
-
-    if (!trimmedPhrase) {
-      Alert.alert("Error", "Please enter your seed phrase");
-      return;
-    }
-
-    if (wordCount !== 15) {
-      Alert.alert("Error", "Seed phrase must contain exactly 15 words");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      await AuthService.validateSeedPhrase(
-        armyId,
-        phone,
-        publicKey,
-        encryptedPrivateKey,
-        trimmedPhrase,
-      );
-
-      Alert.alert("Success", "Login successful!", [
-        { text: "OK", onPress: onSuccess },
-      ]);
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    } finally {
-      setIsLoading(false);
-    }
+  const handleCopy = async () => {
+    await Clipboard.setStringAsync(seedPhrase);
+    Alert.alert("Copied", "Seed phrase copied to clipboard");
   };
 
-  const fillTestSeedPhrase = () => {
-    setSeedPhrase(TEST_USERS.personnel.seedPhrase);
+  const handleContinue = async () => {
+    if (!confirmed) {
+      Alert.alert(
+        "Confirmation Required",
+        "Please confirm that you have saved your seed phrase",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+
+    try {
+      // Store initial data
+      await SecureStorage.setItem("userId", userId);
+      await SecureStorage.setItem("publicKey", publicKey);
+      await SecureStorage.setItem("seedPhrase", seedPhrase);
+
+      Alert.alert(
+        "Account Created",
+        "Your account has been created successfully. Please login to continue.",
+        [
+          {
+            text: "Login",
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "Login" }],
+              });
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      Alert.alert("Error", "Failed to save account information");
+    }
   };
 
   return (
-    <KeyboardAvoidingView
+    <View
       className="flex-1"
       style={{ backgroundColor: theme.colors.primaryBg }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView className="flex-1 px-6" contentContainerClassName="py-12">
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          className="mb-6 flex-row items-center"
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.colors.accent} />
-          <Text
-            className="ml-2 text-base font-medium"
-            style={{ color: theme.colors.accent }}
-          >
-            Back
-          </Text>
-        </TouchableOpacity>
-
-        <Text
-          className="text-3xl font-bold mb-2"
-          style={{ color: theme.colors.textPrimary }}
-        >
-          Enter Seed Phrase
-        </Text>
-        <Text
-          className="text-lg mb-6"
-          style={{ color: theme.colors.textSecondary }}
-        >
-          Enter your 15-word seed phrase to decrypt your private key
-        </Text>
-
-        <View
-          className="rounded-xl p-4 mb-6 border"
-          style={{
-            backgroundColor: isDark
-              ? theme.colors.cardBg
-              : theme.colors.secondaryBg,
-            borderColor: theme.colors.accent,
-          }}
-        >
-          <Text
-            className="text-sm font-semibold mb-2"
-            style={{ color: theme.colors.accent }}
-          >
-            🔐 How This Works:
-          </Text>
-          <Text
-            className="text-xs leading-5"
-            style={{ color: theme.colors.textSecondary }}
-          >
-            Your private key is encrypted using:{"\n"}
-            1. Your seed phrase (15 words){"\n"}
-            2. ArmyID + Phone + PublicKey (SHA256){"\n\n"}
-            Without your seed phrase, the private key cannot be decrypted - even
-            by the server.
-          </Text>
-        </View>
-
-        <View className="mb-6">
-          <Text
-            className="mb-2 font-medium"
-            style={{ color: theme.colors.textSecondary }}
-          >
-            Seed Phrase (15 words)
-          </Text>
+      {/* Header */}
+      <View className="px-6 pt-16 pb-6">
+        <View className="items-center mb-8">
           <View
-            className="rounded-xl p-4 border min-h-32"
-            style={{
-              backgroundColor: theme.colors.cardBg,
-              borderColor: theme.colors.border,
-            }}
+            className="w-24 h-24 rounded-full items-center justify-center mb-6"
+            style={{ backgroundColor: theme.colors.warning }}
           >
-            <TextInput
-              className="min-h-24"
-              style={{ color: theme.colors.textPrimary }}
-              placeholder="Enter your seed phrase (15 words separated by spaces)"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={seedPhrase}
-              onChangeText={setSeedPhrase}
-              multiline
-              textAlignVertical="top"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+            <Ionicons name="key" size={48} color="#FFFFFF" />
           </View>
-          <Text
-            className="text-xs mt-2"
-            style={{ color: theme.colors.textSecondary }}
-          >
-            {wordCount} / 15 words
-          </Text>
-        </View>
 
-        <TouchableOpacity
-          className="py-4 rounded-xl mb-4"
-          style={{
-            backgroundColor: isLoading
-              ? theme.colors.border
-              : theme.colors.accent,
-            shadowColor: theme.colors.accent,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 5,
-          }}
-          onPress={handleVerifySeedPhrase}
-          disabled={isLoading}
-        >
-          <Text className="text-white text-center font-semibold text-lg">
-            {isLoading ? "Decrypting..." : "Verify & Login"}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Test Helper */}
-        <View
-          className="rounded-xl p-4 mt-4 border"
-          style={{
-            backgroundColor: theme.colors.cardBg,
-            borderColor: theme.colors.border,
-          }}
-        >
-          <View className="flex-row justify-between items-center mb-2">
-            <Text
-              className="text-xs"
-              style={{ color: theme.colors.textSecondary }}
-            >
-              Test Seed Phrase:
-            </Text>
-            <TouchableOpacity onPress={fillTestSeedPhrase}>
-              <Text
-                className="text-xs font-semibold"
-                style={{ color: theme.colors.accent }}
-              >
-                Auto Fill →
-              </Text>
-            </TouchableOpacity>
-          </View>
           <Text
-            className="text-xs leading-5"
+            className="text-3xl font-bold mb-2 text-center"
             style={{ color: theme.colors.textPrimary }}
           >
-            {TEST_USERS.personnel.seedPhrase}
+            Save Your Seed Phrase
+          </Text>
+          <Text
+            className="text-center text-base"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Write down these 12 words in order and keep them safe
           </Text>
         </View>
+      </View>
 
+      <ScrollView className="flex-1 px-6">
+        {/* Warning */}
         <View
-          className="rounded-xl p-4 mt-6 mb-8 border-2"
+          className="p-4 rounded-xl mb-6"
           style={{
-            backgroundColor: isDark ? "#7F1D1D" : "#FEE2E2",
+            backgroundColor: theme.colors.error + "20",
+            borderWidth: 2,
             borderColor: theme.colors.error,
           }}
         >
+          <View className="flex-row items-center mb-2">
+            <Ionicons name="warning" size={24} color={theme.colors.error} />
+            <Text
+              className="ml-3 font-bold text-lg"
+              style={{ color: theme.colors.error }}
+            >
+              Important Warning
+            </Text>
+          </View>
           <Text
-            className="text-xs font-semibold mb-2"
-            style={{ color: theme.colors.error }}
+            className="text-sm leading-5"
+            style={{ color: theme.colors.textPrimary }}
           >
-            ⚠️ Security Notice
-          </Text>
-          <Text className="text-xs" style={{ color: theme.colors.error }}>
-            Never share your seed phrase with anyone. Defense Secure will never
-            ask for your seed phrase via email or phone.
+            • This phrase is the ONLY way to recover your account{"\n"}• Never
+            share it with anyone{"\n"}• Store it in a secure location{"\n"}• You
+            cannot reset or recover this phrase
           </Text>
         </View>
+
+        {/* Seed Phrase Grid */}
+        <View
+          className="p-4 rounded-xl mb-6"
+          style={{
+            backgroundColor: theme.colors.cardBg,
+            borderWidth: 2,
+            borderColor: theme.colors.accent,
+          }}
+        >
+          <View className="flex-row flex-wrap">
+            {words.map((word: string, index: number) => (
+              <View key={index} className="w-1/2 p-2">
+                <View
+                  className="flex-row items-center p-3 rounded-lg"
+                  style={{ backgroundColor: theme.colors.secondaryBg }}
+                >
+                  <Text
+                    className="w-8 font-bold"
+                    style={{ color: theme.colors.accent }}
+                  >
+                    {index + 1}.
+                  </Text>
+                  <Text
+                    className="flex-1 font-mono font-semibold"
+                    style={{ color: theme.colors.textPrimary }}
+                  >
+                    {word}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Copy Button */}
+        <TouchableOpacity
+          className="py-4 rounded-xl mb-4 flex-row items-center justify-center"
+          style={{
+            backgroundColor: theme.colors.secondaryBg,
+            borderWidth: 2,
+            borderColor: theme.colors.accent,
+          }}
+          onPress={handleCopy}
+        >
+          <Ionicons name="copy-outline" size={24} color={theme.colors.accent} />
+          <Text
+            className="ml-2 font-semibold text-lg"
+            style={{ color: theme.colors.accent }}
+          >
+            Copy to Clipboard
+          </Text>
+        </TouchableOpacity>
+
+        {/* Confirmation */}
+        <TouchableOpacity
+          className="flex-row items-center p-4 rounded-xl mb-6"
+          style={{ backgroundColor: theme.colors.cardBg }}
+          onPress={() => setConfirmed(!confirmed)}
+        >
+          <View
+            className="w-6 h-6 rounded border-2 items-center justify-center mr-3"
+            style={{
+              borderColor: confirmed
+                ? theme.colors.accent
+                : theme.colors.border,
+              backgroundColor: confirmed ? theme.colors.accent : "transparent",
+            }}
+          >
+            {confirmed && (
+              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+            )}
+          </View>
+          <Text className="flex-1" style={{ color: theme.colors.textPrimary }}>
+            I have saved my seed phrase in a secure location
+          </Text>
+        </TouchableOpacity>
+
+        {/* Continue Button */}
+        <TouchableOpacity
+          className="py-4 rounded-xl mb-8"
+          style={{
+            backgroundColor: confirmed
+              ? theme.colors.accent
+              : theme.colors.border,
+            shadowColor: confirmed ? theme.colors.accent : "transparent",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: confirmed ? 5 : 0,
+          }}
+          onPress={handleContinue}
+          disabled={!confirmed}
+        >
+          <Text className="text-white text-center font-semibold text-lg">
+            Continue
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 };

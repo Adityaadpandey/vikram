@@ -1,164 +1,263 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   Alert,
-  Image,
+  ActivityIndicator,
 } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useRoute, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { AuthService } from "../services/auth/AuthService";
 import { useTheme } from "../contexts/ThemeContext";
+import { ApiService } from "../services/api/ApiService";
+import { SecureStorage } from "../services/security/SecureStorage";
 
 export const OTPVerificationScreen: React.FC = () => {
-  const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { theme, isDark } = useTheme();
-  const { armyId, phone, otp: generatedOtp } = route.params;
+  const navigation = useNavigation<any>();
+  const { theme } = useTheme();
+  const { armyId, name, designation, phoneNumber, isRegistration, seedPhrase } =
+    route.params;
 
-  const [otp, setOtp] = useState("");
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [isLoading, setIsLoading] = useState(false);
+  const inputRefs = useRef<Array<TextInput | null>>([]);
+
+  const handleOtpChange = (value: string, index: number) => {
+    if (value.length > 1) {
+      value = value[0];
+    }
+
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+
+    // Auto-focus next input
+    if (value && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyPress = (e: any, index: number) => {
+    if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
 
   const handleVerify = async () => {
-    if (otp.length !== 6) {
-      Alert.alert("Error", "Please enter 6-digit OTP");
+    const otpString = otp.join("");
+
+    if (otpString.length !== 6) {
+      Alert.alert("Error", "Please enter the complete OTP");
       return;
     }
 
     setIsLoading(true);
-    try {
-      const result = await AuthService.verifyLoginOTP(armyId, phone, otp);
 
-      navigation.navigate("SeedPhrase", {
-        armyId,
-        phone,
-        publicKey: result.publicKey,
-        encryptedPrivateKey: result.encryptedPrivateKey,
-      });
+    try {
+      if (isRegistration) {
+        // Registration flow
+        const response = await ApiService.verifyRegistrationOTP(
+          armyId,
+          phoneNumber,
+          otpString,
+          name,
+          designation,
+        );
+
+        Alert.alert(
+          "Registration Successful",
+          "Please save your seed phrase securely. You will need it to access your account.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                navigation.navigate("SeedPhrase", {
+                  seedPhrase: response.seedPhrase,
+                  publicKey: response.publicKey,
+                  userId: response.userId,
+                });
+              },
+            },
+          ],
+        );
+      } else {
+        // Login flow
+        const response = await ApiService.verifyLoginOTP(
+          armyId,
+          phoneNumber,
+          otpString,
+          seedPhrase,
+        );
+
+        // Store session token and keys
+        await SecureStorage.setToken(response.sessionToken);
+        await SecureStorage.setItem("userId", response.user.id);
+        await SecureStorage.setItem("publicKey", response.keys.publicKey);
+        await SecureStorage.setItem("privateKey", response.keys.privateKey);
+        await SecureStorage.setItem("armyId", response.user.armyId);
+        await SecureStorage.setItem("userName", response.user.name);
+        await SecureStorage.setItem(
+          "userDesignation",
+          response.user.designation,
+        );
+
+        Alert.alert("Login Successful", "Welcome back!", [
+          {
+            text: "OK",
+            onPress: () => {
+              // Navigation will be handled by AppNavigator based on token
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "Main" }],
+              });
+            },
+          },
+        ]);
+      }
     } catch (error: any) {
-      Alert.alert("Error", error.message);
+      Alert.alert(
+        "Verification Failed",
+        error.response?.data?.message || "Invalid OTP. Please try again.",
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleResendOTP = async () => {
+    try {
+      if (isRegistration) {
+        await ApiService.register(armyId, phoneNumber);
+      } else {
+        await ApiService.login(armyId, phoneNumber);
+      }
+      Alert.alert("Success", "OTP resent successfully");
+    } catch (error: any) {
+      Alert.alert("Error", "Failed to resend OTP. Please try again.");
+    }
+  };
+
   return (
     <View
-      className="flex-1 justify-center px-6"
+      className="flex-1"
       style={{ backgroundColor: theme.colors.primaryBg }}
     >
-      <TouchableOpacity
-        onPress={() => navigation.goBack()}
-        className="mb-6 flex-row items-center"
-      >
-        <Ionicons name="arrow-back" size={24} color={theme.colors.accent} />
-        <Text
-          className="ml-2 text-base font-medium"
-          style={{ color: theme.colors.accent }}
-        >
-          Back
-        </Text>
-      </TouchableOpacity>
-
-      <View className="items-center mb-8">
-        <View
-          className="w-20 h-20 rounded-full items-center justify-center mb-4"
-          style={
-            {
-              // backgroundColor: theme.colors.accent,
-              // shadowColor: theme.colors.accent,
-              // shadowOffset: { width: 0, height: 8 },
-              // shadowOpacity: 0.3,
-              // shadowRadius: 16,
-              // elevation: 10,
-            }
-          }
-        >
-          {/* <Ionicons name="shield-checkmark" size={40} color="#FFFFFF" /> */}
-          <Image
-            source={require("../../assets/icon.png")}
-            className="w-25 h-24 mr-2"
-            resizeMode="contain"
+      {/* Header */}
+      <View className="px-6 pt-16">
+        <TouchableOpacity onPress={() => navigation.goBack()} className="mb-8">
+          <Ionicons
+            name="arrow-back"
+            size={28}
+            color={theme.colors.textPrimary}
           />
+        </TouchableOpacity>
+
+        <View className="items-center mb-12">
+          <View
+            className="w-24 h-24 rounded-full items-center justify-center mb-6"
+            style={{ backgroundColor: theme.colors.accent }}
+          >
+            <Ionicons name="shield-checkmark" size={48} color="#FFFFFF" />
+          </View>
+
+          <Text
+            className="text-3xl font-bold mb-2"
+            style={{ color: theme.colors.textPrimary }}
+          >
+            Verify OTP
+          </Text>
+          <Text
+            className="text-center text-base"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Enter the 6-digit code sent to{"\n"}
+            <Text className="font-semibold">{phoneNumber}</Text>
+          </Text>
         </View>
       </View>
 
-      <Text
-        className="text-3xl font-bold mb-2"
-        style={{ color: theme.colors.textPrimary }}
-      >
-        Verify OTP
-      </Text>
-      <Text
-        className="text-lg mb-8"
-        style={{ color: theme.colors.textSecondary }}
-      >
-        Enter the 6-digit code sent to {phone}
-      </Text>
+      {/* OTP Input */}
+      <View className="px-6">
+        <View className="flex-row justify-between mb-8">
+          {otp.map((digit, index) => (
+            <TextInput
+              key={index}
+              ref={(ref) => {
+                inputRefs.current[index] = ref;
+              }}
+              className="w-14 h-16 text-center text-2xl font-bold rounded-xl"
+              style={{
+                backgroundColor: theme.colors.cardBg,
+                color: theme.colors.textPrimary,
+                borderWidth: 2,
+                borderColor: digit ? theme.colors.accent : theme.colors.border,
+              }}
+              maxLength={1}
+              keyboardType="number-pad"
+              value={digit}
+              onChangeText={(value) => handleOtpChange(value, index)}
+              onKeyPress={(e) => handleKeyPress(e, index)}
+            />
+          ))}
+        </View>
 
-      <View
-        className="px-4 py-4 rounded-xl mb-4 border"
-        style={{
-          backgroundColor: theme.colors.cardBg,
-          borderColor: theme.colors.border,
-        }}
-      >
-        <TextInput
-          className="text-2xl tracking-widest text-center"
-          style={{ color: theme.colors.textPrimary }}
-          placeholder="000000"
-          placeholderTextColor={theme.colors.textSecondary}
-          value={otp}
-          onChangeText={setOtp}
-          keyboardType="number-pad"
-          maxLength={6}
-          autoFocus
-        />
-      </View>
-
-      <View
-        className="rounded-xl p-4 mb-6"
-        style={{
-          backgroundColor: theme.colors.cardBg,
-          borderColor: theme.colors.border,
-        }}
-      >
-        <Text className="text-sm" style={{ color: theme.colors.textSecondary }}>
-          📱 Mock OTP: {generatedOtp}
-        </Text>
-      </View>
-
-      <TouchableOpacity
-        className="py-4 rounded-xl"
-        style={{
-          backgroundColor:
-            otp.length === 6 && !isLoading
-              ? theme.colors.accent
-              : theme.colors.border,
-          shadowColor: theme.colors.accent,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          elevation: 5,
-        }}
-        onPress={handleVerify}
-        disabled={otp.length !== 6 || isLoading}
-      >
-        <Text className="text-white text-center font-semibold text-lg">
-          {isLoading ? "Verifying..." : "Verify OTP"}
-        </Text>
-      </TouchableOpacity>
-
-      <View className="flex-row items-center justify-center mt-6">
-        <Ionicons name="lock-closed" size={14} color={theme.colors.accent} />
-        <Text
-          className="text-sm ml-2"
-          style={{ color: theme.colors.textSecondary }}
+        {/* Verify Button */}
+        <TouchableOpacity
+          className="py-4 rounded-xl mb-4"
+          style={{
+            backgroundColor: theme.colors.accent,
+            shadowColor: theme.colors.accent,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 5,
+          }}
+          onPress={handleVerify}
+          disabled={isLoading}
         >
-          Secure OTP verification
-        </Text>
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text className="text-white text-center font-semibold text-lg">
+              Verify OTP
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Resend OTP */}
+        <View className="flex-row justify-center items-center">
+          <Text style={{ color: theme.colors.textSecondary }}>
+            Didn't receive the code?{" "}
+          </Text>
+          <TouchableOpacity onPress={handleResendOTP}>
+            <Text className="font-bold" style={{ color: theme.colors.accent }}>
+              Resend
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Security Note */}
+      <View className="absolute bottom-8 left-0 right-0 px-6">
+        <View
+          className="p-4 rounded-xl flex-row items-start"
+          style={{ backgroundColor: theme.colors.cardBg }}
+        >
+          <Ionicons
+            name="shield-checkmark"
+            size={20}
+            color={theme.colors.accent}
+          />
+          <Text
+            className="flex-1 ml-3 text-sm"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            This is a secure military communication channel. Never share your
+            OTP with anyone.
+          </Text>
+        </View>
       </View>
     </View>
   );

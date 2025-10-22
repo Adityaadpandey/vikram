@@ -1,18 +1,32 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   FlatList,
   TextInput,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { IconButton } from "../../components/common/IconButton";
 import { useTheme } from "../../contexts/ThemeContext";
-import { MOCK_CHATS } from "../../services/mock/MockData";
+import { WebSocketService } from "../../services/api/WebSocketService";
 
 type FilterType = "all" | "direct" | "group";
+
+interface Chat {
+  id: string;
+  name: string;
+  type: "direct" | "group";
+  lastMessage: string;
+  timestamp: string;
+  unread: number;
+  members?: any[];
+  recipientId?: string;
+  recipientPublicKey?: string;
+}
 
 export const ChatsListScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -20,8 +34,124 @@ export const ChatsListScreen: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filteredChats = MOCK_CHATS.filter((chat) => {
+  useEffect(() => {
+    loadChats();
+
+    // Listen for new messages
+    WebSocketService.onMessage((message: any) => {
+      updateChatWithNewMessage(
+        message.senderId,
+        message.text,
+        message.timestamp,
+      );
+    });
+
+    WebSocketService.onGroupMessage((message: any) => {
+      updateChatWithNewMessage(
+        message.groupId,
+        message.text,
+        message.timestamp,
+      );
+    });
+  }, []);
+
+  const loadChats = async () => {
+    try {
+      setIsLoading(true);
+
+      if (!WebSocketService.isConnected()) {
+        await WebSocketService.connect();
+      }
+
+      // Get groups
+      WebSocketService.getGroups();
+      WebSocketService.onGroups((groups) => {
+        const groupChats: Chat[] = groups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          type: "group",
+          lastMessage: group.lastMessage || "No messages yet",
+          timestamp: group.lastMessageTime || "Just now",
+          unread: 0,
+          members: group.members,
+        }));
+
+        setChats((prev) => [
+          ...prev.filter((c) => c.type !== "group"),
+          ...groupChats,
+        ]);
+        setIsLoading(false);
+        setRefreshing(false);
+      });
+
+      // Get contacts for direct chats
+      WebSocketService.getContacts();
+      WebSocketService.onContacts((contacts) => {
+        const directChats: Chat[] = contacts.map((contact) => ({
+          id: contact.id,
+          name: contact.name,
+          type: "direct",
+          lastMessage: "",
+          timestamp: "",
+          unread: 0,
+          recipientId: contact.id,
+          recipientPublicKey: contact.publicKey,
+        }));
+
+        setChats((prev) => [
+          ...prev.filter((c) => c.type !== "direct"),
+          ...directChats,
+        ]);
+      });
+    } catch (error) {
+      console.error("Failed to load chats:", error);
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const updateChatWithNewMessage = (
+    chatId: string,
+    messageText: string,
+    timestamp: number,
+  ) => {
+    setChats((prevChats) => {
+      const updatedChats = prevChats.map((chat) => {
+        if (chat.id === chatId) {
+          return {
+            ...chat,
+            lastMessage: messageText,
+            timestamp: new Date(timestamp).toLocaleTimeString("en-US", {
+              hour: "numeric",
+              minute: "2-digit",
+            }),
+            unread: chat.unread + 1,
+          };
+        }
+        return chat;
+      });
+
+      // Sort by timestamp
+      return updatedChats.sort((a, b) => {
+        if (!a.timestamp) return 1;
+        if (!b.timestamp) return -1;
+        return (
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+      });
+    });
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadChats();
+  };
+
+  const filteredChats = chats.filter((chat) => {
     const matchesFilter = activeFilter === "all" || chat.type === activeFilter;
     const matchesSearch = chat.name
       .toLowerCase()
@@ -55,7 +185,7 @@ export const ChatsListScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
-  const renderChatItem = ({ item }: any) => (
+  const renderChatItem = ({ item }: { item: Chat }) => (
     <TouchableOpacity
       className="flex-row items-center px-6 py-4"
       style={{
@@ -67,6 +197,9 @@ export const ChatsListScreen: React.FC = () => {
           groupId: item.id,
           groupName: item.name,
           chatType: item.type,
+          recipientId: item.recipientId,
+          recipientPublicKey: item.recipientPublicKey,
+          members: item.members,
         })
       }
     >
@@ -104,7 +237,7 @@ export const ChatsListScreen: React.FC = () => {
             style={{ color: theme.colors.textSecondary }}
             numberOfLines={1}
           >
-            {item.lastMessage}
+            {item.lastMessage || "Start a conversation"}
           </Text>
           {item.unread > 0 && (
             <View
@@ -216,26 +349,42 @@ export const ChatsListScreen: React.FC = () => {
       </View>
 
       {/* Chats List */}
-      <FlatList
-        data={filteredChats}
-        keyExtractor={(item) => item.id}
-        renderItem={renderChatItem}
-        ListEmptyComponent={
-          <View className="flex-1 items-center justify-center py-20">
-            <Ionicons
-              name="chatbubbles-outline"
-              size={64}
-              color={theme.colors.textSecondary}
+      {isLoading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color={theme.colors.accent} />
+          <Text className="mt-4" style={{ color: theme.colors.textSecondary }}>
+            Loading chats...
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredChats}
+          keyExtractor={(item) => item.id}
+          renderItem={renderChatItem}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colors.accent}
             />
-            <Text
-              className="text-lg mt-4"
-              style={{ color: theme.colors.textSecondary }}
-            >
-              No messages found
-            </Text>
-          </View>
-        }
-      />
+          }
+          ListEmptyComponent={
+            <View className="flex-1 items-center justify-center py-20">
+              <Ionicons
+                name="chatbubbles-outline"
+                size={64}
+                color={theme.colors.textSecondary}
+              />
+              <Text
+                className="text-lg mt-4"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                No messages found
+              </Text>
+            </View>
+          }
+        />
+      )}
 
       {/* Floating Action Button */}
       <TouchableOpacity

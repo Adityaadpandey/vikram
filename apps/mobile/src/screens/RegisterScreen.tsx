@@ -4,459 +4,244 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { AuthService, RegistrationData } from "../services/auth/AuthService";
-import { CryptoService } from "../services/auth/CryptoService";
 import { useTheme } from "../contexts/ThemeContext";
+import { ApiService } from "../services/api/ApiService";
 
 export const RegisterScreen: React.FC = () => {
   const navigation = useNavigation<any>();
-  const { theme, isDark } = useTheme();
-  const [step, setStep] = useState(1);
+  const { theme } = useTheme();
   const [armyId, setArmyId] = useState("");
-  const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
-  const [rank, setRank] = useState("");
-  const [unit, setUnit] = useState("");
-  const [otp, setOtp] = useState("");
-  const [generatedOtp, setGeneratedOtp] = useState("");
-  const [seedPhrase, setSeedPhrase] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSendOtp = async () => {
-    if (!armyId || !phone || !name || !rank || !unit) {
-      Alert.alert("Error", "Please fill all fields");
+  const handleRegister = async () => {
+    if (!armyId || !name || !designation || !phoneNumber) {
+      Alert.alert("Error", "Please fill in all fields");
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const registrationData: RegistrationData = {
-        armyId,
-        phone,
-        name,
-        rank,
-        unit,
-      };
-
-      const result = await AuthService.register(registrationData);
-      setGeneratedOtp(result.otp);
-      setStep(2);
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGenerateSeedPhrase = async () => {
-    setIsLoading(true);
-    try {
-      const phrase = await CryptoService.generateSeedPhrase();
-      setSeedPhrase(phrase);
-      setStep(3);
-    } catch (error: any) {
-      Alert.alert("Error", "Failed to generate seed phrase");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleVerifyAndComplete = async () => {
-    if (otp !== generatedOtp) {
-      Alert.alert("Error", "Invalid OTP");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      await AuthService.verifyRegistrationOTP(armyId, phone, otp, seedPhrase);
+    // Validate phone number format
+    const phoneRegex = /^\+91[0-9]{10}$/;
+    if (!phoneRegex.test(phoneNumber)) {
       Alert.alert(
-        "Success",
-        "Registration complete! Please save your seed phrase securely.",
-        [
-          {
-            text: "OK",
-            onPress: () => navigation.replace("Login"),
-          },
-        ],
+        "Error",
+        "Please enter a valid phone number (format: +919876543210)",
       );
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Step 1: Send OTP
+      await ApiService.register(armyId, phoneNumber);
+
+      // Navigate to OTP screen
+      navigation.navigate("OTPVerification", {
+        armyId,
+        name,
+        designation,
+        phoneNumber,
+        isRegistration: true,
+      });
     } catch (error: any) {
-      Alert.alert("Error", error.message);
+      Alert.alert(
+        "Registration Failed",
+        error.response?.data?.message ||
+          "Failed to send OTP. Please try again.",
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
+    <View
       className="flex-1"
       style={{ backgroundColor: theme.colors.primaryBg }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
-        className="flex-1 px-6"
-        contentContainerClassName="py-12"
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Step 1: User Details */}
-        {step === 1 && (
-          <>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              className="mb-6 flex-row items-center"
-            >
-              <Ionicons
-                name="arrow-back"
-                size={24}
-                color={theme.colors.accent}
-              />
-              <Text
-                className="ml-2 text-base font-medium"
-                style={{ color: theme.colors.accent }}
-              >
-                Back to Login
-              </Text>
-            </TouchableOpacity>
+      {/* Header */}
+      <View className="px-6 pt-16">
+        <TouchableOpacity onPress={() => navigation.goBack()} className="mb-8">
+          <Ionicons
+            name="arrow-back"
+            size={28}
+            color={theme.colors.textPrimary}
+          />
+        </TouchableOpacity>
 
-            <Text
-              className="text-3xl font-bold mb-2"
+        <Text
+          className="text-4xl font-bold mb-2"
+          style={{ color: theme.colors.textPrimary }}
+        >
+          Register
+        </Text>
+        <Text
+          className="text-lg mb-8"
+          style={{ color: theme.colors.textSecondary }}
+        >
+          Create your secure account
+        </Text>
+      </View>
+
+      {/* Form */}
+      <View className="px-6">
+        {/* Army ID */}
+        <View className="mb-4">
+          <Text
+            className="mb-2 font-medium"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Army ID / Service Number
+          </Text>
+          <View
+            className="flex-row items-center px-4 py-4 rounded-xl border"
+            style={{
+              backgroundColor: theme.colors.cardBg,
+              borderColor: theme.colors.border,
+            }}
+          >
+            <Ionicons
+              name="shield-checkmark"
+              size={20}
+              color={theme.colors.accent}
+            />
+            <TextInput
+              className="flex-1 ml-3"
               style={{ color: theme.colors.textPrimary }}
-            >
-              Create Account
-            </Text>
-            <Text
-              className="text-lg mb-8"
-              style={{ color: theme.colors.textSecondary }}
-            >
-              Register for secure communication
-            </Text>
+              placeholder="A12345"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={armyId}
+              onChangeText={setArmyId}
+              autoCapitalize="characters"
+            />
+          </View>
+        </View>
 
-            <View className="space-y-4">
-              <View>
-                <Text
-                  className="mb-2 font-medium"
-                  style={{ color: theme.colors.textSecondary }}
-                >
-                  Army ID *
-                </Text>
-                <View
-                  className="flex-row items-center px-4 py-3 rounded-xl border"
-                  style={{
-                    backgroundColor: theme.colors.cardBg,
-                    borderColor: theme.colors.border,
-                  }}
-                >
-                  <Ionicons
-                    name="id-card-outline"
-                    size={20}
-                    color={theme.colors.textSecondary}
-                  />
-                  <TextInput
-                    className="flex-1 ml-3"
-                    style={{ color: theme.colors.textPrimary }}
-                    placeholder="Enter Army ID"
-                    placeholderTextColor={theme.colors.textSecondary}
-                    value={armyId}
-                    onChangeText={setArmyId}
-                    autoCapitalize="characters"
-                  />
-                </View>
-              </View>
-
-              <View>
-                <Text
-                  className="mb-2 font-medium"
-                  style={{ color: theme.colors.textSecondary }}
-                >
-                  Phone Number *
-                </Text>
-                <View
-                  className="flex-row items-center px-4 py-3 rounded-xl border"
-                  style={{
-                    backgroundColor: theme.colors.cardBg,
-                    borderColor: theme.colors.border,
-                  }}
-                >
-                  <Ionicons
-                    name="call-outline"
-                    size={20}
-                    color={theme.colors.textSecondary}
-                  />
-                  <TextInput
-                    className="flex-1 ml-3"
-                    style={{ color: theme.colors.textPrimary }}
-                    placeholder="+91 XXXXXXXXXX"
-                    placeholderTextColor={theme.colors.textSecondary}
-                    value={phone}
-                    onChangeText={setPhone}
-                    keyboardType="phone-pad"
-                  />
-                </View>
-              </View>
-
-              <View>
-                <Text
-                  className="mb-2 font-medium"
-                  style={{ color: theme.colors.textSecondary }}
-                >
-                  Full Name *
-                </Text>
-                <View
-                  className="flex-row items-center px-4 py-3 rounded-xl border"
-                  style={{
-                    backgroundColor: theme.colors.cardBg,
-                    borderColor: theme.colors.border,
-                  }}
-                >
-                  <Ionicons
-                    name="person-outline"
-                    size={20}
-                    color={theme.colors.textSecondary}
-                  />
-                  <TextInput
-                    className="flex-1 ml-3"
-                    style={{ color: theme.colors.textPrimary }}
-                    placeholder="Enter your name"
-                    placeholderTextColor={theme.colors.textSecondary}
-                    value={name}
-                    onChangeText={setName}
-                  />
-                </View>
-              </View>
-
-              <View>
-                <Text
-                  className="mb-2 font-medium"
-                  style={{ color: theme.colors.textSecondary }}
-                >
-                  Rank *
-                </Text>
-                <View
-                  className="flex-row items-center px-4 py-3 rounded-xl border"
-                  style={{
-                    backgroundColor: theme.colors.cardBg,
-                    borderColor: theme.colors.border,
-                  }}
-                >
-                  <Ionicons
-                    name="medal-outline"
-                    size={20}
-                    color={theme.colors.textSecondary}
-                  />
-                  <TextInput
-                    className="flex-1 ml-3"
-                    style={{ color: theme.colors.textPrimary }}
-                    placeholder="e.g., Captain"
-                    placeholderTextColor={theme.colors.textSecondary}
-                    value={rank}
-                    onChangeText={setRank}
-                  />
-                </View>
-              </View>
-
-              <View>
-                <Text
-                  className="mb-2 font-medium"
-                  style={{ color: theme.colors.textSecondary }}
-                >
-                  Unit *
-                </Text>
-                <View
-                  className="flex-row items-center px-4 py-3 rounded-xl border"
-                  style={{
-                    backgroundColor: theme.colors.cardBg,
-                    borderColor: theme.colors.border,
-                  }}
-                >
-                  <Ionicons
-                    name="business-outline"
-                    size={20}
-                    color={theme.colors.textSecondary}
-                  />
-                  <TextInput
-                    className="flex-1 ml-3"
-                    style={{ color: theme.colors.textPrimary }}
-                    placeholder="e.g., 5th Infantry Division"
-                    placeholderTextColor={theme.colors.textSecondary}
-                    value={unit}
-                    onChangeText={setUnit}
-                  />
-                </View>
-              </View>
-
-              <TouchableOpacity
-                className="py-4 rounded-xl mt-6"
-                style={{
-                  backgroundColor: isLoading
-                    ? theme.colors.border
-                    : theme.colors.accent,
-                  shadowColor: theme.colors.accent,
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 8,
-                  elevation: 5,
-                }}
-                onPress={handleSendOtp}
-                disabled={isLoading}
-              >
-                <Text className="text-white text-center font-semibold text-lg">
-                  {isLoading ? "Processing..." : "Send OTP"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-
-        {/* Step 2: OTP Verification */}
-        {step === 2 && (
-          <>
-            <Text
-              className="text-3xl font-bold mb-2"
+        {/* Full Name */}
+        <View className="mb-4">
+          <Text
+            className="mb-2 font-medium"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Full Name
+          </Text>
+          <View
+            className="flex-row items-center px-4 py-4 rounded-xl border"
+            style={{
+              backgroundColor: theme.colors.cardBg,
+              borderColor: theme.colors.border,
+            }}
+          >
+            <Ionicons name="person" size={20} color={theme.colors.accent} />
+            <TextInput
+              className="flex-1 ml-3"
               style={{ color: theme.colors.textPrimary }}
-            >
-              Verify OTP
-            </Text>
-            <Text
-              className="text-lg mb-8"
-              style={{ color: theme.colors.textSecondary }}
-            >
-              Enter the 6-digit code sent to {phone}
-            </Text>
+              placeholder="John Doe"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={name}
+              onChangeText={setName}
+            />
+          </View>
+        </View>
 
-            <View
-              className="px-4 py-3 rounded-xl text-center border"
-              style={{
-                backgroundColor: theme.colors.cardBg,
-                borderColor: theme.colors.border,
-              }}
-            >
-              <TextInput
-                className="text-2xl tracking-widest text-center"
-                style={{ color: theme.colors.textPrimary }}
-                placeholder="000000"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={otp}
-                onChangeText={setOtp}
-                keyboardType="number-pad"
-                maxLength={6}
-              />
-            </View>
-
-            <View
-              className="rounded-xl p-4 mt-4"
-              style={{
-                backgroundColor: theme.colors.cardBg,
-                borderColor: theme.colors.border,
-              }}
-            >
-              <Text
-                className="text-sm"
-                style={{ color: theme.colors.textSecondary }}
-              >
-                📱 Mock OTP: {generatedOtp}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              className="py-4 rounded-xl mt-6"
-              style={{
-                backgroundColor:
-                  otp.length === 6 ? theme.colors.accent : theme.colors.border,
-                shadowColor: theme.colors.accent,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-                elevation: 5,
-              }}
-              onPress={handleGenerateSeedPhrase}
-              disabled={otp.length !== 6}
-            >
-              <Text className="text-white text-center font-semibold text-lg">
-                Verify & Continue
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* Step 3: Seed Phrase */}
-        {step === 3 && (
-          <>
-            <Text
-              className="text-3xl font-bold mb-2"
+        {/* Designation */}
+        <View className="mb-4">
+          <Text
+            className="mb-2 font-medium"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Rank / Designation
+          </Text>
+          <View
+            className="flex-row items-center px-4 py-4 rounded-xl border"
+            style={{
+              backgroundColor: theme.colors.cardBg,
+              borderColor: theme.colors.border,
+            }}
+          >
+            <Ionicons name="star" size={20} color={theme.colors.accent} />
+            <TextInput
+              className="flex-1 ml-3"
               style={{ color: theme.colors.textPrimary }}
-            >
-              Save Your Seed Phrase
+              placeholder="Captain"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={designation}
+              onChangeText={setDesignation}
+            />
+          </View>
+        </View>
+
+        {/* Phone Number */}
+        <View className="mb-6">
+          <Text
+            className="mb-2 font-medium"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Phone Number
+          </Text>
+          <View
+            className="flex-row items-center px-4 py-4 rounded-xl border"
+            style={{
+              backgroundColor: theme.colors.cardBg,
+              borderColor: theme.colors.border,
+            }}
+          >
+            <Ionicons name="call" size={20} color={theme.colors.accent} />
+            <TextInput
+              className="flex-1 ml-3"
+              style={{ color: theme.colors.textPrimary }}
+              placeholder="+919876543210"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              keyboardType="phone-pad"
+            />
+          </View>
+        </View>
+
+        {/* Register Button */}
+        <TouchableOpacity
+          className="py-4 rounded-xl mb-4"
+          style={{
+            backgroundColor: theme.colors.accent,
+            shadowColor: theme.colors.accent,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 5,
+          }}
+          onPress={handleRegister}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text className="text-white text-center font-semibold text-lg">
+              Continue
             </Text>
-            <Text
-              className="text-lg mb-4"
-              style={{ color: theme.colors.textSecondary }}
-            >
-              Write down these 15 words in order
+          )}
+        </TouchableOpacity>
+
+        {/* Login Link */}
+        <View className="flex-row justify-center items-center">
+          <Text style={{ color: theme.colors.textSecondary }}>
+            Already have an account?{" "}
+          </Text>
+          <TouchableOpacity onPress={() => navigation.navigate("Login")}>
+            <Text className="font-bold" style={{ color: theme.colors.accent }}>
+              Login
             </Text>
-
-            <View
-              className="rounded-xl p-4 mb-6 border-2"
-              style={{
-                backgroundColor: isDark ? "#7F1D1D" : "#FEE2E2",
-                borderColor: theme.colors.error,
-              }}
-            >
-              <Text
-                className="text-sm font-semibold mb-2"
-                style={{ color: theme.colors.error }}
-              >
-                ⚠️ CRITICAL: Save This Securely
-              </Text>
-              <Text className="text-xs" style={{ color: theme.colors.error }}>
-                This seed phrase is the ONLY way to recover your account. Store
-                it offline and never share it.
-              </Text>
-            </View>
-
-            <View
-              className="rounded-xl p-4 mb-6"
-              style={{
-                backgroundColor: theme.colors.cardBg,
-                borderColor: theme.colors.border,
-              }}
-            >
-              <Text
-                className="text-base leading-7"
-                style={{ color: theme.colors.textPrimary }}
-              >
-                {seedPhrase}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              className="py-4 rounded-xl"
-              style={{
-                backgroundColor: isLoading
-                  ? theme.colors.border
-                  : theme.colors.accent,
-                shadowColor: theme.colors.accent,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-                elevation: 5,
-              }}
-              onPress={handleVerifyAndComplete}
-              disabled={isLoading}
-            >
-              <Text className="text-white text-center font-semibold text-lg">
-                {isLoading ? "Completing..." : "I Have Saved It Securely"}
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
   );
 };

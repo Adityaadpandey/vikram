@@ -21,6 +21,9 @@ import { Audio } from "expo-av";
 import { IconButton } from "../components/common/IconButton";
 import { useTheme } from "../contexts/ThemeContext";
 import { MOCK_MESSAGES, Message } from "../services/mock/MockData";
+import { WebSocketService } from "../services/api/WebSocketService";
+import { EncryptionService } from "../services/security/EncryptionService";
+import { SecureStorage } from "../services/security/SecureStorage";
 
 const { width } = Dimensions.get("window");
 
@@ -44,6 +47,167 @@ export const ChatScreen: React.FC = () => {
 
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showMessageMenu, setShowMessageMenu] = useState(false);
+
+  const [recipientPublicKey, setRecipientPublicKey] = useState<string>("");
+  const [recipientId, setRecipientId] = useState<string>("");
+
+  const [recipientPublicKeys, setRecipientPublicKeys] = useState<{
+    [userId: string]: string;
+  }>({});
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
+
+  useEffect(() => {
+    requestPermissions();
+    initializeWebSocket();
+
+    // Scroll to highlighted message
+    if (highlightMessageId) {
+      setTimeout(() => {
+        const index = messages.findIndex((m) => m.id === highlightMessageId);
+        if (index !== -1) {
+          flatListRef.current?.scrollToIndex({
+            index,
+            animated: true,
+            viewPosition: 0.5,
+          });
+        }
+      }, 500);
+    }
+
+    return () => {
+      // Cleanup
+    };
+  }, []);
+
+  const initializeWebSocket = async () => {
+    try {
+      if (!WebSocketService.isConnected()) {
+        await WebSocketService.connect();
+        WebSocketService.startHeartbeat();
+      }
+
+      if (chatType === "group") {
+        // Group chat
+        WebSocketService.onGroupMessage(handleIncomingGroupMessage);
+
+        // Get group info and member keys
+        if (route.params.members) {
+          const members = route.params.members;
+          setGroupMembers(members);
+
+          // Build public keys map
+          const keysMap: { [userId: string]: string } = {};
+          members.forEach((member: any) => {
+            keysMap[member.id] = member.publicKey;
+          });
+          setRecipientPublicKeys(keysMap);
+        }
+      } else {
+        // Direct chat
+        WebSocketService.onMessage(handleIncomingMessage);
+
+        setRecipientId(groupId);
+
+        if (route.params.recipientPublicKey) {
+          setRecipientPublicKeys({
+            [groupId]: route.params.recipientPublicKey,
+          });
+        } else {
+          WebSocketService.requestPublicKey(groupId);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to initialize WebSocket:", error);
+      Alert.alert("Connection Error", "Failed to connect to server");
+    }
+  };
+
+  const handleIncomingGroupMessage = async (incomingMessage: any) => {
+    try {
+      const privateKey = await SecureStorage.getPrivateKey();
+      if (!privateKey) {
+        throw new Error("Private key not found");
+      }
+
+      const userId = await SecureStorage.getUserId();
+      if (!userId) {
+        throw new Error("User ID not found");
+      }
+
+      // Get encrypted key for current user
+      const encryptedKey = incomingMessage.encryptedKeys[userId];
+      if (!encryptedKey) {
+        console.error("No encrypted key for current user");
+        return;
+      }
+
+      // Decrypt message
+      const decryptedText = await EncryptionService.decryptMessage(
+        incomingMessage.encryptedContent,
+        encryptedKey,
+        incomingMessage.iv,
+        privateKey,
+      );
+
+      const newMessage: Message = {
+        id: incomingMessage.messageId,
+        senderId: incomingMessage.senderId,
+        senderName: incomingMessage.senderName,
+        text: decryptedText,
+        timestamp: new Date(incomingMessage.timestamp).toLocaleTimeString(
+          "en-US",
+          {
+            hour: "numeric",
+            minute: "2-digit",
+          },
+        ),
+        type: "text",
+      };
+
+      setMessages((prev) => [...prev, newMessage]);
+      scrollToBottom();
+    } catch (error) {
+      console.error("Failed to decrypt group message:", error);
+    }
+  };
+
+  const handleIncomingMessage = async (incomingMessage: any) => {
+    try {
+      // Get private key to decrypt
+      const privateKey = await SecureStorage.getItem("privateKey");
+      if (!privateKey) {
+        throw new Error("Private key not found");
+      }
+
+      // Decrypt message
+      const decryptedText = await EncryptionService.decryptMessage(
+        incomingMessage.encryptedContent,
+        incomingMessage.encryptedKey,
+        incomingMessage.iv,
+        privateKey,
+      );
+
+      const newMessage: Message = {
+        id: incomingMessage.messageId,
+        senderId: incomingMessage.senderId,
+        senderName: incomingMessage.senderName,
+        text: decryptedText,
+        timestamp: new Date(incomingMessage.timestamp).toLocaleTimeString(
+          "en-US",
+          {
+            hour: "numeric",
+            minute: "2-digit",
+          },
+        ),
+        type: "text",
+      };
+
+      setMessages((prev) => [...prev, newMessage]);
+      scrollToBottom();
+    } catch (error) {
+      console.error("Failed to decrypt message:", error);
+    }
+  };
 
   // Toggle star on message
   const toggleStarMessage = (messageId: string) => {
@@ -122,23 +286,73 @@ export const ChatScreen: React.FC = () => {
     }, 100);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (message.trim()) {
-      const newMessage: Message = {
-        id: `m${Date.now()}`,
-        senderId: "c1",
-        senderName: "You",
-        text: message.trim(),
-        timestamp: new Date().toLocaleTimeString("en-US", {
-          hour: "numeric",
-          minute: "2-digit",
-        }),
-        type: "text",
-      };
+      try {
+        const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      setMessages([...messages, newMessage]);
-      setMessage("");
-      scrollToBottom();
+        if (chatType === "group") {
+          // Group message - encrypt for all members
+          if (Object.keys(recipientPublicKeys).length === 0) {
+            Alert.alert("Error", "Group member keys not loaded");
+            return;
+          }
+
+          const { encryptedContent, encryptedKeys, iv } =
+            await EncryptionService.encryptMessageForGroup(
+              message.trim(),
+              recipientPublicKeys,
+            );
+
+          WebSocketService.sendGroupMessage({
+            groupId,
+            encryptedContent,
+            encryptedKeys,
+            iv,
+            messageId,
+            timestamp: Date.now(),
+          });
+        } else {
+          // Direct message
+          const publicKey = recipientPublicKeys[recipientId];
+          if (!publicKey) {
+            Alert.alert("Error", "Recipient public key not available");
+            return;
+          }
+
+          const { encryptedContent, encryptedKey, iv } =
+            await EncryptionService.encryptMessage(message.trim(), publicKey);
+
+          WebSocketService.sendMessage({
+            recipientId,
+            encryptedContent,
+            encryptedKey,
+            iv,
+            messageId,
+            timestamp: Date.now(),
+          });
+        }
+
+        // Add to local messages
+        const newMessage: Message = {
+          id: messageId,
+          senderId: "c1",
+          senderName: "You",
+          text: message.trim(),
+          timestamp: new Date().toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+          type: "text",
+        };
+
+        setMessages([...messages, newMessage]);
+        setMessage("");
+        scrollToBottom();
+      } catch (error) {
+        console.error("Failed to send message:", error);
+        Alert.alert("Error", "Failed to send message");
+      }
     }
   };
 

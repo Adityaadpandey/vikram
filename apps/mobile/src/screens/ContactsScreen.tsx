@@ -1,21 +1,85 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   FlatList,
   ScrollView,
+  RefreshControl,
+  ActivityIndicator,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useTheme } from "../contexts/ThemeContext";
-import { MOCK_CONTACTS } from "../services/mock/MockData";
+import { WebSocketService } from "../services/api/WebSocketService";
+
+interface Contact {
+  id: string;
+  armyId: string;
+  name: string;
+  designation: string;
+  publicKey: string;
+  status: "online" | "offline";
+}
 
 export const ContactsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { theme, isDark } = useTheme();
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const renderContact = ({ item }: { item: (typeof MOCK_CONTACTS)[0] }) => (
+  useEffect(() => {
+    loadContacts();
+
+    // Listen for contact updates
+    WebSocketService.onContacts(handleContactsUpdate);
+    WebSocketService.onStatusUpdate(handleStatusUpdate);
+
+    return () => {
+      // Cleanup listeners
+    };
+  }, []);
+
+  const loadContacts = async () => {
+    try {
+      setIsLoading(true);
+
+      // Ensure WebSocket is connected
+      if (!WebSocketService.isConnected()) {
+        await WebSocketService.connect();
+      }
+
+      // Request contacts list
+      WebSocketService.getContacts();
+    } catch (error) {
+      console.error("Failed to load contacts:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleContactsUpdate = (updatedContacts: Contact[]) => {
+    setContacts(updatedContacts);
+    setRefreshing(false);
+  };
+
+  const handleStatusUpdate = (userId: string, status: string) => {
+    setContacts((prevContacts) =>
+      prevContacts.map((contact) =>
+        contact.id === userId
+          ? { ...contact, status: status as "online" | "offline" }
+          : contact,
+      ),
+    );
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadContacts();
+  };
+
+  const renderContact = ({ item }: { item: Contact }) => (
     <TouchableOpacity
       className="flex-row items-center p-4 rounded-lg mb-2"
       style={{
@@ -28,6 +92,8 @@ export const ContactsScreen: React.FC = () => {
           groupId: item.id,
           groupName: item.name,
           chatType: "direct",
+          recipientId: item.id,
+          recipientPublicKey: item.publicKey,
         })
       }
     >
@@ -52,17 +118,14 @@ export const ContactsScreen: React.FC = () => {
               backgroundColor:
                 item.status === "online"
                   ? theme.colors.success
-                  : item.status === "away"
-                    ? theme.colors.warning
-                    : theme.colors.textSecondary,
+                  : theme.colors.textSecondary,
             }}
           />
           <Text
             className="text-sm"
             style={{ color: theme.colors.textSecondary }}
           >
-            {item.rank || item.relation}
-            {item.unit ? ` • ${item.unit}` : ""}
+            {item.designation} • {item.armyId}
           </Text>
         </View>
       </View>
@@ -107,13 +170,22 @@ export const ContactsScreen: React.FC = () => {
               className="text-sm"
               style={{ color: theme.colors.textSecondary }}
             >
-              Manage your connections
+              {contacts.length} contacts
             </Text>
           </View>
         </View>
       </View>
 
-      <ScrollView className="flex-1">
+      <ScrollView
+        className="flex-1"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.accent}
+          />
+        }
+      >
         {/* Quick Actions */}
         <View className="p-4">
           <TouchableOpacity
@@ -188,29 +260,48 @@ export const ContactsScreen: React.FC = () => {
             className="font-bold mb-3"
             style={{ color: theme.colors.textPrimary }}
           >
-            All Contacts ({MOCK_CONTACTS.length})
+            All Contacts ({contacts.length})
           </Text>
-          <FlatList
-            data={MOCK_CONTACTS}
-            keyExtractor={(item) => item.id}
-            renderItem={renderContact}
-            scrollEnabled={false}
-            ListEmptyComponent={
-              <View className="items-center py-12">
-                <Ionicons
-                  name="people-outline"
-                  size={64}
-                  color={theme.colors.textSecondary}
-                />
-                <Text
-                  className="text-lg mt-4"
-                  style={{ color: theme.colors.textSecondary }}
-                >
-                  No contacts yet
-                </Text>
-              </View>
-            }
-          />
+
+          {isLoading ? (
+            <View className="py-12 items-center">
+              <ActivityIndicator size="large" color={theme.colors.accent} />
+              <Text
+                className="mt-4"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                Loading contacts...
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={contacts}
+              keyExtractor={(item) => item.id}
+              renderItem={renderContact}
+              scrollEnabled={false}
+              ListEmptyComponent={
+                <View className="items-center py-12">
+                  <Ionicons
+                    name="people-outline"
+                    size={64}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text
+                    className="text-lg mt-4"
+                    style={{ color: theme.colors.textSecondary }}
+                  >
+                    No contacts yet
+                  </Text>
+                  <Text
+                    className="text-sm mt-2 text-center px-8"
+                    style={{ color: theme.colors.textSecondary }}
+                  >
+                    Add contacts to start secure conversations
+                  </Text>
+                </View>
+              }
+            />
+          )}
         </View>
       </ScrollView>
     </View>
