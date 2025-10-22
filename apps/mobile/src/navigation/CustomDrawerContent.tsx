@@ -225,7 +225,7 @@ export const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (
       >
         <View className="flex-row items-center justify-center mb-2">
           <Image
-            source={require("../../assets/icon.png")}
+            source={require("../../assets/app-icon.png")}
             className="w-6 h-6 mr-2"
             resizeMode="contain"
           />

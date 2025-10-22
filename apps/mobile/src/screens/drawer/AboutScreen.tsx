@@ -64,7 +64,7 @@ export const AboutScreen: React.FC = () => {
             }}
           >
             <Image
-              source={require("../../../assets/icon.png")}
+              source={require("../../../assets/app-icon.png")}
               className="w-20 h-20"
               resizeMode="contain"
             />

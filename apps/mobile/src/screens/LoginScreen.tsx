@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -68,12 +69,17 @@ export const LoginScreen: React.FC = () => {
     >
       {/* Header */}
       <View className="px-6 pt-20">
-        <View className="items-center mb-12">
+        <View className="items-center mb-10">
           <View
-            className="w-24 h-24 rounded-full items-center justify-center mb-6"
-            style={{ backgroundColor: theme.colors.accent }}
+            className="w-30 h-30 mb-4"
+            // style={{ backgroundColor: theme.colors.accent }}
           >
-            <Ionicons name="shield-checkmark" size={48} color="#FFFFFF" />
+            {/* <Ionicons name="shield-checkmark" size={48} color="#FFFFFF" /> */}
+            <Image
+              source={require("../../assets/app-icon.png")}
+              className="w-24 h-24"
+              resizeMode="contain"
+            />
           </View>
 
           <Text
@@ -170,7 +176,7 @@ export const LoginScreen: React.FC = () => {
               }}
             >
               <TextInput
-                className="min-h-[100px]"
+                className="min-h-[75px]"
                 style={{ color: theme.colors.textPrimary }}
                 placeholder="Enter your 12-word seed phrase"
                 placeholderTextColor={theme.colors.textSecondary}
@@ -222,10 +228,10 @@ export const LoginScreen: React.FC = () => {
       {/* Security Note */}
       <View className="absolute bottom-8 left-0 right-0 px-6">
         <View
-          className="p-4 rounded-xl flex-row items-start"
+          className="p-2 rounded-xl flex-row items-center"
           style={{ backgroundColor: theme.colors.cardBg }}
         >
-          <Ionicons name="lock-closed" size={20} color={theme.colors.accent} />
+          <Ionicons name="lock-closed" size={16} color={theme.colors.accent} />
           <Text
             className="flex-1 ml-3 text-sm"
             style={{ color: theme.colors.textSecondary }}

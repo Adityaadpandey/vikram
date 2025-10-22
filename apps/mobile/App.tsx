@@ -197,7 +197,7 @@ function AppContent() {
         {/* App Icon */}
         <View className="w-24 h-24 rounded-full bg-dark-accent items-center justify-center mb-8">
           <Image
-            source={require("./assets/icon.png")}
+            source={require("./assets/app-icon.png")}
             className="w-20 h-20"
             resizeMode="contain"
           />

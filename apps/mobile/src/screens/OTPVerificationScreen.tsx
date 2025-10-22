@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -156,10 +157,15 @@ export const OTPVerificationScreen: React.FC = () => {
 
         <View className="items-center mb-12">
           <View
-            className="w-24 h-24 rounded-full items-center justify-center mb-6"
-            style={{ backgroundColor: theme.colors.accent }}
+            className="w-24 h-24 mb-4"
+            // style={{ backgroundColor: theme.colors.accent }}
           >
-            <Ionicons name="shield-checkmark" size={48} color="#FFFFFF" />
+            {/* <Ionicons name="shield-checkmark" size={48} color="#FFFFFF" /> */}
+            <Image
+              source={require("../../assets/app-icon.png")}
+              className="w-24 h-24"
+              resizeMode="contain"
+            />
           </View>
 
           <Text
