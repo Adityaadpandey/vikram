@@ -47,8 +47,8 @@ export default function E2EChatApp() {
   const [screen, setScreen] = useState("loading");
   const [authStep, setAuthStep] = useState("choice");
   const [config, setConfig] = useState({
-    apiUrl: "http://localhost:7001",
-    wsUrl: "ws://localhost:7001",
+    apiUrl: "http://localhost:7123/api/v1/auth",
+    wsUrl: "ws://localhost:7123/api/v1/ws",
     sessionToken: "",
     privateKey: "",
     publicKey: "",
@@ -380,7 +380,7 @@ export default function E2EChatApp() {
     setLoading(true);
     setStatus("");
     try {
-      const response = await fetch(`${config.apiUrl}/auth/register`, {
+      const response = await fetch(`${config.apiUrl}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ armyId, phoneNumber }),
@@ -405,7 +405,7 @@ export default function E2EChatApp() {
     setLoading(true);
     setStatus("");
     try {
-      const response = await fetch(`${config.apiUrl}/auth/verify-otp`, {
+      const response = await fetch(`${config.apiUrl}/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ armyId, phoneNumber, otp, name, designation }),
@@ -435,7 +435,7 @@ export default function E2EChatApp() {
     setLoading(true);
     setStatus("");
     try {
-      const response = await fetch(`${config.apiUrl}/auth/login`, {
+      const response = await fetch(`${config.apiUrl}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ armyId, phoneNumber }),
@@ -460,7 +460,7 @@ export default function E2EChatApp() {
     setLoading(true);
     setStatus("");
     try {
-      const response = await fetch(`${config.apiUrl}/auth/login-verify`, {
+      const response = await fetch(`${config.apiUrl}/login-verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ armyId, phoneNumber, otp, seedPhrase }),
@@ -662,7 +662,7 @@ export default function E2EChatApp() {
     }
 
     try {
-      await fetch(`${config.apiUrl}/auth/logout`, {
+      await fetch(`${config.apiUrl}/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionToken: config.sessionToken }),

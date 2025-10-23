@@ -1,0 +1,44 @@
+# --- Builder Stage ---
+FROM node:22-alpine AS builder
+
+WORKDIR /workspace
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Copy pnpm lock file for consistent installs
+COPY pnpm-lock.yaml ./
+
+# Logger package
+COPY packages/logger ./packages/logger
+WORKDIR /workspace/packages/logger
+RUN pnpm install && pnpm run build
+
+# API Gateway setup
+WORKDIR /workspace/apps/api-gateway
+COPY apps/api-gateway/package*.json ./
+COPY apps/api-gateway/tsconfig.json ./
+COPY apps/api-gateway/src ./src
+RUN pnpm install && pnpm run build
+
+# --- Final Stage ---
+FROM node:22-alpine
+
+WORKDIR /workspace
+
+# Optional: Enable corepack for cleaner installs
+# RUN corepack enable
+
+# Copy built files
+COPY --from=builder /workspace/packages/logger ./packages/logger
+COPY --from=builder /workspace/apps/api-gateway/dist ./apps/api-gateway/dist
+COPY --from=builder /workspace/apps/api-gateway/package*.json ./apps/api-gateway/
+
+# Install only production dependencies
+WORKDIR /workspace/apps/api-gateway
+RUN npm install -g pnpm
+RUN pnpm install --prod
+
+EXPOSE 7123
+
+CMD ["node", "dist/app.js"]
