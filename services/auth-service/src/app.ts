@@ -9,7 +9,6 @@ import logger from "./config/logger";
 import { connectRedis } from "./config/redis";
 import { authRouter } from "./router/auth";
 import { setupGracefulShutdown } from "./utils/shutDown";
-import { createWebSocketServer } from "./ws/server";
 
 // Initialize Express app
 
@@ -38,8 +37,6 @@ const startServer = async () => {
     const server = app.listen(config.PORT, () => {
       logger.info(`${config.SERVICE_NAME} running on port ${config.PORT}`);
     });
-
-    createWebSocketServer(server);
 
     // Setup graceful shutdown
     setupGracefulShutdown(server);

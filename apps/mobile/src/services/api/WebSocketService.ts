@@ -1,5 +1,5 @@
 import { io, Socket } from "socket.io-client";
-import { API_CONFIG } from "../../config/api.config";
+import { API_CONFIG, WS_ENDPOINT } from "../../config/api.config";
 import { SecureStorage } from "../security/SecureStorage";
 
 interface EncryptedMessage {
@@ -7,7 +7,7 @@ interface EncryptedMessage {
   encryptedContent: string;
   encryptedKey: string;
   iv: string;
-  messageId: string;
+  messageId?: string;
   timestamp: number;
 }
 
@@ -48,7 +48,7 @@ class WebSocketServiceClass {
 
   async connect() {
     if (this.socket?.connected) {
-      console.log("Already connected");
+      console.log("Already connected to WebSocket");
       return;
     }
 
@@ -57,16 +57,28 @@ class WebSocketServiceClass {
       throw new Error("No session token available");
     }
 
-    this.socket = io(API_CONFIG.WS_URL, {
+    console.log(
+      "Connecting to WebSocket Gateway:",
+      API_CONFIG.WS_GATEWAY_URL + WS_ENDPOINT,
+    );
+
+    // Connect through API Gateway WebSocket endpoint
+    this.socket = io(API_CONFIG.WS_GATEWAY_URL + WS_ENDPOINT, {
       transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
+      timeout: 10000,
     });
 
     this.setupListeners();
-    this.authenticate(sessionToken);
+
+    // Authenticate after connection
+    this.socket.on("connect", () => {
+      console.log("WebSocket connected, authenticating...");
+      this.authenticate(sessionToken);
+    });
   }
 
   private setupListeners() {
@@ -76,9 +88,14 @@ class WebSocketServiceClass {
       console.log("WebSocket connected");
     });
 
-    this.socket.on("disconnect", () => {
-      console.log("WebSocket disconnected");
+    this.socket.on("disconnect", (reason) => {
+      console.log("WebSocket disconnected:", reason);
       this.isAuthenticated = false;
+    });
+
+    this.socket.on("connect_error", (error) => {
+      console.error("WebSocket connection error:", error);
+      this.errorCallbacks.forEach((callback) => callback(error.message));
     });
 
     this.socket.on("auth_success", (data) => {
@@ -92,7 +109,7 @@ class WebSocketServiceClass {
     });
 
     this.socket.on("contacts", (data: { contacts: Contact[] }) => {
-      console.log("Received contacts:", data);
+      console.log("Received contacts:", data.contacts.length);
       this.contactsCallbacks.forEach((callback) => callback(data.contacts));
     });
 
@@ -107,12 +124,18 @@ class WebSocketServiceClass {
     );
 
     this.socket.on("error", (data: { message: string }) => {
-      console.error("WebSocket error:", data);
+      console.error("WebSocket error:", data.message);
       this.errorCallbacks.forEach((callback) => callback(data.message));
     });
 
     this.socket.on("friend_added", (data) => {
       console.log("Friend added:", data);
+      // Refresh contacts
+      this.getContacts();
+    });
+
+    this.socket.on("public_key_response", (data) => {
+      console.log("Public key received:", data);
     });
 
     this.socket.on("typing", (data: { userId: string }) => {
@@ -124,9 +147,17 @@ class WebSocketServiceClass {
     });
 
     this.socket.on("pong", (data: { timestamp: number }) => {
-      // Keep-alive response
+      console.log("Pong received");
     });
 
+    this.socket.on(
+      "message_sent",
+      (data: { messageId: string; timestamp: number }) => {
+        console.log("Message sent confirmation:", data);
+      },
+    );
+
+    // Group events
     this.socket.on(
       "group_created",
       (data: {
@@ -141,7 +172,7 @@ class WebSocketServiceClass {
     );
 
     this.socket.on("groups", (data: { groups: any[] }) => {
-      console.log("Received groups:", data);
+      console.log("Received groups:", data.groups.length);
       this.groupsCallbacks.forEach((callback) => callback(data.groups));
     });
 
@@ -174,12 +205,14 @@ class WebSocketServiceClass {
   private authenticate(sessionToken: string) {
     if (!this.socket) return;
 
-    this.socket.emit("auth", {
+    console.log("Sending auth message...");
+    this.socket.emit("message", {
       type: "auth",
       sessionToken,
     });
   }
 
+  // Send encrypted message (direct)
   sendMessage(message: EncryptedMessage) {
     if (!this.socket || !this.isAuthenticated) {
       throw new Error("WebSocket not connected or authenticated");
@@ -191,74 +224,81 @@ class WebSocketServiceClass {
     });
   }
 
+  // Get contacts
   getContacts() {
     if (!this.socket || !this.isAuthenticated) {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("get_contacts", {
+    this.socket.emit("message", {
       type: "get_contacts",
     });
   }
 
+  // Add friend
   addFriend(armyId: string) {
     if (!this.socket || !this.isAuthenticated) {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("add_friend", {
+    this.socket.emit("message", {
       type: "add_friend",
       armyId,
     });
   }
 
+  // Request public key
   requestPublicKey(recipientId: string) {
     if (!this.socket || !this.isAuthenticated) {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("request_public_key", {
+    this.socket.emit("message", {
       type: "request_public_key",
       recipientId,
     });
   }
 
+  // Send typing indicator
   sendTypingIndicator(recipientId: string) {
     if (!this.socket || !this.isAuthenticated) {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("typing", {
+    this.socket.emit("message", {
       type: "typing",
       recipientId,
     });
   }
 
+  // Send read receipt
   sendReadReceipt(messageId: string) {
     if (!this.socket || !this.isAuthenticated) {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("read", {
+    this.socket.emit("message", {
       type: "read",
       messageId,
     });
   }
 
+  // Ping/Pong heartbeat
   startHeartbeat() {
     setInterval(() => {
       if (this.socket?.connected) {
-        this.socket.emit("ping", { type: "ping" });
+        this.socket.emit("message", { type: "ping" });
       }
     }, 30000); // Every 30 seconds
   }
 
+  // Group Management Methods
   createGroup(groupName: string, memberIds: string[]) {
     if (!this.socket || !this.isAuthenticated) {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("create_group", {
+    this.socket.emit("message", {
       type: "create_group",
       groupName,
       memberIds,
@@ -268,16 +308,16 @@ class WebSocketServiceClass {
   sendGroupMessage(message: {
     groupId: string;
     encryptedContent: string;
-    encryptedKeys: { [userId: string]: string }; // Encrypted key for each member
+    encryptedKeys: { [userId: string]: string };
     iv: string;
-    messageId: string;
+    messageId?: string;
     timestamp: number;
   }) {
     if (!this.socket || !this.isAuthenticated) {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("group_message", {
+    this.socket.emit("message", {
       type: "group_message",
       ...message,
     });
@@ -288,7 +328,7 @@ class WebSocketServiceClass {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("get_groups", {
+    this.socket.emit("message", {
       type: "get_groups",
     });
   }
@@ -298,7 +338,7 @@ class WebSocketServiceClass {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("add_group_member", {
+    this.socket.emit("message", {
       type: "add_group_member",
       groupId,
       userId,
@@ -310,7 +350,7 @@ class WebSocketServiceClass {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("remove_group_member", {
+    this.socket.emit("message", {
       type: "remove_group_member",
       groupId,
       userId,
@@ -322,7 +362,7 @@ class WebSocketServiceClass {
       throw new Error("WebSocket not connected or authenticated");
     }
 
-    this.socket.emit("leave_group", {
+    this.socket.emit("message", {
       type: "leave_group",
       groupId,
     });
