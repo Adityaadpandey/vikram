@@ -7,6 +7,7 @@ import express, { NextFunction, Request, Response } from "express";
 import { config } from "./config";
 import logger from "./config/logger";
 import { connectRedis } from "./config/redis";
+import { connectKafka } from "./kafka";
 import { setupGracefulShutdown } from "./utils/shutDown";
 import { createWebSocketServer } from "./ws/server";
 
@@ -33,6 +34,7 @@ const startServer = async () => {
       logger.info(`${config.SERVICE_NAME} running on port ${config.PORT}`);
     });
 
+    await connectKafka();
     createWebSocketServer(server);
 
     // Setup graceful shutdown

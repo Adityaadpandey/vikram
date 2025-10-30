@@ -12,6 +12,8 @@ interface Config {
   TWILIO_ACCOUNT_SID: string;
   TWILIO_AUTH_TOKEN: string;
   TWILIO_PHONE_NUMBER: string;
+
+  KAFKA_BROKER: string;
 }
 
 export const config: Config = {
@@ -24,4 +26,6 @@ export const config: Config = {
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || "",
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || "",
   TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || "",
+
+  KAFKA_BROKER: process.env.KAFKA_BROKER || "localhost:9094",
 };

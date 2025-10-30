@@ -1,7 +1,6 @@
 import { Server } from "http";
 import logger from "../config/logger";
 import { redis } from "../config/redis";
-import { closeWebSocketServer } from "../ws/server";
 
 export const setupGracefulShutdown = (server: Server) => {
   const shutdown = async (signal: string) => {
@@ -14,8 +13,6 @@ export const setupGracefulShutdown = (server: Server) => {
           resolve();
         });
       });
-      // Closing WebSocket Server
-      await closeWebSocketServer();
 
       await redis.quit();
       logger.info("Redis connection closed.");
