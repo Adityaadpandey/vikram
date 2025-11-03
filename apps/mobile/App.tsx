@@ -175,9 +175,7 @@ function AppContent() {
     const biometricEnabled = await BiometricAuthService.isEnabled();
 
     if (biometricEnabled) {
-      const success = await BiometricAuthService.authenticate(
-        "Unlock Defense Secure",
-      );
+      const success = await BiometricAuthService.authenticate("Unlock Vikram");
       if (success) {
         setIsLocked(false);
         await AutoLockService.updateLastActiveTime();
@@ -204,7 +202,7 @@ function AppContent() {
         </View>
         <Text className="text-white text-2xl font-bold mb-2">App Locked</Text>
         <Text className="text-dark-text-secondary text-center mb-8">
-          Authenticate to continue using Defense Secure
+          Authenticate to continue using Vikram
         </Text>
         <TouchableOpacity
           className="bg-dark-accent py-4 px-8 rounded-lg"

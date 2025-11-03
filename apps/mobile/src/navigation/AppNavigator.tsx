@@ -57,12 +57,12 @@ export const AppNavigator: React.FC = () => {
             component={OTPVerificationScreen}
           />
           <Stack.Screen name="SeedPhrase" options={{ gestureEnabled: false }}>
-            {(props) => (
-              <SeedPhraseScreen
-                {...props}
-                onSuccess={() => setIsAuthenticated(true)}
-              />
-            )}
+            {(props) =>
+              React.createElement(SeedPhraseScreen as any, {
+                ...props,
+                onSuccess: () => setIsAuthenticated(true),
+              })
+            }
           </Stack.Screen>
         </>
       ) : (

@@ -34,7 +34,7 @@ export class BiometricAuthService {
   static async authenticate(reason?: string): Promise<boolean> {
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: reason || "Authenticate to access Defense Secure",
+        promptMessage: reason || "Authenticate to access Vikram",
         cancelLabel: "Cancel",
         disableDeviceFallback: false,
         fallbackLabel: "Use Passcode",

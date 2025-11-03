@@ -86,7 +86,7 @@ export const LoginScreen: React.FC = () => {
             className="text-4xl font-bold mb-2"
             style={{ color: theme.colors.textPrimary }}
           >
-            Defense Secure
+            Vikram
           </Text>
           <Text
             className="text-lg"
