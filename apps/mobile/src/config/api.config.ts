@@ -2,10 +2,10 @@
 export const API_CONFIG = {
   // API Gateway (all requests go through this)
   GATEWAY_URL: __DEV__
-    ? "http://localhost:7123"
+    ? "https://unwrecked-pseudohumanistic-eric.ngrok-free.dev/"
     : "https://your-production-url.com",
   WS_GATEWAY_URL: __DEV__
-    ? "ws://localhost:7123"
+    ? "wss://unwrecked-pseudohumanistic-eric.ngrok-free.dev"
     : "wss://your-production-url.com",
 
   TIMEOUT: 30000,

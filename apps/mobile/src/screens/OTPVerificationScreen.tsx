@@ -92,6 +92,12 @@ export const OTPVerificationScreen: React.FC = () => {
           seedPhrase,
         );
 
+        console.log("✅ Login response:", {
+          hasToken: !!response.sessionToken,
+          hasUser: !!response.user,
+          hasKeys: !!response.keys,
+        });
+
         // Store session token and keys
         await SecureStorage.setToken(response.sessionToken);
         await SecureStorage.setItem("userId", response.user.id);
@@ -102,6 +108,10 @@ export const OTPVerificationScreen: React.FC = () => {
         await SecureStorage.setItem(
           "userDesignation",
           response.user.designation,
+        );
+        console.log(
+          "✅ Credentials stored, token:",
+          response.sessionToken.substring(0, 20) + "...",
         );
 
         Alert.alert("Login Successful", "Welcome back!", [

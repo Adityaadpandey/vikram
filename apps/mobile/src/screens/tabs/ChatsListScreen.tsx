@@ -7,12 +7,14 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { IconButton } from "../../components/common/IconButton";
 import { useTheme } from "../../contexts/ThemeContext";
 import { WebSocketService } from "../../services/api/WebSocketService";
+import { ConnectionStatus } from "../../components/common/ConnectionStatus";
 
 type FilterType = "all" | "direct" | "group";
 
@@ -63,56 +65,101 @@ export const ChatsListScreen: React.FC = () => {
     try {
       setIsLoading(true);
 
-      if (!WebSocketService.isConnected()) {
+      console.log("📊 Loading chats...");
+
+      // Connect to WebSocket with proper error handling
+      try {
         await WebSocketService.connect();
-      }
-
-      // Get groups
-      WebSocketService.getGroups();
-      WebSocketService.onGroups((groups) => {
-        const groupChats: Chat[] = groups.map((group) => ({
-          id: group.id,
-          name: group.name,
-          type: "group",
-          lastMessage: group.lastMessage || "No messages yet",
-          timestamp: group.lastMessageTime || "Just now",
-          unread: 0,
-          members: group.members,
-        }));
-
-        setChats((prev) => [
-          ...prev.filter((c) => c.type !== "group"),
-          ...groupChats,
-        ]);
+        console.log("✅ WebSocket connected");
+      } catch (error: any) {
+        console.error("❌ WebSocket connection failed:", error.message);
+        Alert.alert(
+          "Connection Error",
+          "Failed to connect to server. Please check your connection and try again.",
+          [
+            { text: "Retry", onPress: () => loadChats() },
+            { text: "Cancel", style: "cancel" },
+          ],
+        );
         setIsLoading(false);
         setRefreshing(false);
-      });
+        return;
+      }
+
+      // Start heartbeat after successful connection
+      WebSocketService.startHeartbeat();
+
+      // Get groups
+      try {
+        await WebSocketService.getGroups();
+        console.log("📤 Groups request sent");
+      } catch (error) {
+        console.error("❌ Failed to request groups:", error);
+      }
 
       // Get contacts for direct chats
-      WebSocketService.getContacts();
-      WebSocketService.onContacts((contacts) => {
-        const directChats: Chat[] = contacts.map((contact) => ({
-          id: contact.id,
-          name: contact.name,
-          type: "direct",
-          lastMessage: "",
-          timestamp: "",
-          unread: 0,
-          recipientId: contact.id,
-          recipientPublicKey: contact.publicKey,
-        }));
+      try {
+        await WebSocketService.getContacts();
+        console.log("📤 Contacts request sent");
+      } catch (error) {
+        console.error("❌ Failed to request contacts:", error);
+      }
 
-        setChats((prev) => [
-          ...prev.filter((c) => c.type !== "direct"),
-          ...directChats,
-        ]);
-      });
-    } catch (error) {
-      console.error("Failed to load chats:", error);
+      // Set timeout to stop loading if no response
+      setTimeout(() => {
+        if (isLoading) {
+          console.log("⏱️ Loading timeout, stopping loader");
+          setIsLoading(false);
+          setRefreshing(false);
+        }
+      }, 10000);
+    } catch (error: any) {
+      console.error("❌ Failed to load chats:", error.message);
+      Alert.alert("Error", error.message || "Failed to load chats");
       setIsLoading(false);
       setRefreshing(false);
     }
   };
+
+  // Update the callbacks to stop loading
+  WebSocketService.onGroups((groups) => {
+    const groupChats: Chat[] = groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      type: "group",
+      lastMessage: group.lastMessage || "No messages yet",
+      timestamp: group.lastMessageTime || "Just now",
+      unread: 0,
+      members: group.members,
+    }));
+
+    setChats((prev) => [
+      ...prev.filter((c) => c.type !== "group"),
+      ...groupChats,
+    ]);
+    setIsLoading(false);
+    setRefreshing(false);
+  });
+
+  WebSocketService.onContacts((contacts) => {
+    const directChats: Chat[] = contacts.map((contact) => ({
+      id: contact.id,
+      name: contact.name,
+      type: "direct",
+      lastMessage: "",
+      timestamp: "",
+      unread: 0,
+      recipientId: contact.id,
+      recipientPublicKey: contact.publicKey,
+    }));
+
+    setChats((prev) => [
+      ...prev.filter((c) => c.type !== "direct"),
+      ...directChats,
+    ]);
+    setIsLoading(false);
+    setRefreshing(false);
+  });
 
   const updateChatWithNewMessage = (
     chatId: string,
@@ -323,6 +370,7 @@ export const ChatsListScreen: React.FC = () => {
           </View>
         )}
       </View>
+      <ConnectionStatus />
 
       {/* Filters */}
       <View
