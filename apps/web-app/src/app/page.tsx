@@ -47,8 +47,8 @@ export default function E2EChatApp() {
   const [screen, setScreen] = useState("loading");
   const [authStep, setAuthStep] = useState("choice");
   const [config, setConfig] = useState({
-    apiUrl: "http://localhost:7123/api/v1/auth",
-    wsUrl: "ws://localhost:7123/api/v1/ws",
+    apiUrl: process.env.NEXT_PUBLIC_HOST,
+    wsUrl: process.env.NEXT_PUBLIC_WS_HOST,
     sessionToken: "",
     privateKey: "",
     publicKey: "",
@@ -837,7 +837,7 @@ export default function E2EChatApp() {
                   </div>
                   <div>
                     <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                      Name (Optional)
+                      Name
                     </label>
                     <Input
                       value={name}
@@ -848,7 +848,7 @@ export default function E2EChatApp() {
                   </div>
                   <div>
                     <label className="text-sm font-semibold text-slate-700 mb-2 block">
-                      Designation (Optional)
+                      Designation
                     </label>
                     <Input
                       value={designation}
