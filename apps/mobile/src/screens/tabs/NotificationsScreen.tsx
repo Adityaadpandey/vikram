@@ -1,15 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, FlatList, Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { IconButton } from "../../components/common/IconButton";
 import { useTheme } from "../../contexts/ThemeContext";
-import {
-  MOCK_PENDING_REQUESTS,
-  getMentionedMessages,
-  approveContactRequest,
-  removePendingRequest,
-} from "../../services/mock/MockData";
+import { WebSocketService } from "../../services/api/WebSocketService";
 
 type NotificationFilter = "all" | "requests" | "mentions" | "updates";
 
@@ -26,109 +21,84 @@ export const NotificationsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { theme, isDark } = useTheme();
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
-  const [pendingRequests, setPendingRequests] = useState(MOCK_PENDING_REQUESTS);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  const mentionedMessages = getMentionedMessages();
+  useEffect(() => {
+    // System update notification (always present)
+    setNotifications([
+      {
+        id: "update1",
+        type: "update",
+        title: "System Update",
+        message: "New security features are now available",
+        timestamp: "1 day ago",
+      },
+    ]);
 
-  // Convert pending requests to notifications
-  const requestNotifications: Notification[] = pendingRequests.map(
-    (request) => ({
-      id: request.id,
-      type: "request",
-      title: "New Contact Request",
-      message: `${request.name} wants to connect`,
-      timestamp: request.requestDate,
-      data: request,
-    }),
-  );
+    // Listen for friend request events from WebSocket
+    if (WebSocketService.isConnected()) {
+      WebSocketService.onGroup((event, data) => {
+        if (event === "created") {
+          setNotifications((prev) => [
+            {
+              id: `grp_${Date.now()}`,
+              type: "update",
+              title: "New Group",
+              message: `You were added to "${data.groupName}"`,
+              timestamp: "Just now",
+              data,
+            },
+            ...prev,
+          ]);
+        }
+      });
+    }
+  }, []);
 
-  // Convert mentions to notifications
-  const mentionNotifications: Notification[] = mentionedMessages.map((msg) => ({
-    id: `mention_${msg.id}`,
-    type: "mention",
-    title: `Mention in ${msg.chatName}`,
-    message: `${msg.senderName}: ${msg.text}`,
-    timestamp: msg.timestamp,
-    data: {
-      chatId: msg.chatId,
-      chatName: msg.chatName,
-      messageId: msg.id,
-    },
-  }));
-
-  const updateNotifications: Notification[] = [
-    {
-      id: "update1",
-      type: "update",
-      title: "System Update",
-      message: "New security features are now available",
-      timestamp: "1 day ago",
-    },
-  ];
-
-  const allNotifications = [
-    ...requestNotifications,
-    ...mentionNotifications,
-    ...updateNotifications,
-  ];
-
-  const filterMap: Record<NotificationFilter, Notification["type"] | null> = {
-    all: null,
-    requests: "request",
-    mentions: "mention",
-    updates: "update",
-  };
-
-  const filteredNotifications = allNotifications.filter((notification) => {
+  const filteredNotifications = notifications.filter((notification) => {
     if (activeFilter === "all") return true;
+    const filterMap: Record<NotificationFilter, Notification["type"] | null> = {
+      all: null,
+      requests: "request",
+      mentions: "mention",
+      updates: "update",
+    };
     return notification.type === filterMap[activeFilter];
   });
 
   const handleApprove = (notification: Notification) => {
-    const newContact = approveContactRequest(notification.id);
-    if (newContact) {
-      removePendingRequest(notification.id);
-      setPendingRequests(
-        pendingRequests.filter((r) => r.id !== notification.id),
-      );
+    if (notification.data?.armyId) {
+      WebSocketService.addFriend(notification.data.armyId);
+      setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
       Alert.alert(
         "Approved",
-        `${notification.data.name} has been added to your contacts`,
+        `${notification.data.name || "Contact"} has been added`,
       );
     }
   };
 
   const handleReject = (notification: Notification) => {
-    Alert.alert(
-      "Reject Request",
-      `Reject ${notification.data.name}'s request?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reject",
-          style: "destructive",
-          onPress: () => {
-            removePendingRequest(notification.id);
-            setPendingRequests(
-              pendingRequests.filter((r) => r.id !== notification.id),
-            );
-            Alert.alert("Rejected", "Contact request has been declined");
-          },
+    Alert.alert("Reject Request", `Reject this request?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Reject",
+        style: "destructive",
+        onPress: () => {
+          setNotifications((prev) =>
+            prev.filter((n) => n.id !== notification.id),
+          );
+          Alert.alert("Rejected", "Request has been declined");
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleMentionClick = (notification: Notification) => {
     navigation.navigate("Chat", {
-      groupId: notification.data.chatId,
-      groupName: notification.data.chatName,
-      chatType:
-        notification.data.chatName.includes("Squad") ||
-        notification.data.chatName.includes("Group")
-          ? "group"
-          : "direct",
-      highlightMessageId: notification.data.messageId,
+      groupId: notification.data?.chatId,
+      groupName: notification.data?.chatName,
+      chatType: "group",
+      highlightMessageId: notification.data?.messageId,
     });
   };
 

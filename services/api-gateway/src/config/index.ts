@@ -16,5 +16,5 @@ export const config: Config = {
   NODE_ENV: process.env.NODE_ENV || "development",
   AUTH_SERVICE_URL:
     process.env.AUTH_SERVICE_URL?.trim() || "http://localhost:7001",
-  WS_SERVICE_URL: process.env.WS_SERVICE_URL?.trim() || "ws://localhost:7002",
+  WS_SERVICE_URL: process.env.WS_SERVICE_URL?.trim() || "http://localhost:7002",
 };

@@ -1,29 +1,57 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   FlatList,
+  ActivityIndicator,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../contexts/ThemeContext";
-import { MOCK_CONTACTS } from "../services/mock/MockData";
+import { WebSocketService } from "../services/api/WebSocketService";
+
+interface Contact {
+  id: string;
+  armyId: string;
+  name: string;
+  designation: string;
+  publicKey: string;
+  status: "online" | "offline";
+}
 
 export const SelectContactScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { theme, isDark } = useTheme();
   const [searchQuery, setSearchQuery] = useState("");
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredContacts = MOCK_CONTACTS.filter((contact) =>
-    contact.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  useEffect(() => {
+    const loadContacts = async () => {
+      try {
+        if (!WebSocketService.isConnected()) {
+          await WebSocketService.connect();
+        }
+        WebSocketService.onContacts((serverContacts) => {
+          setContacts(serverContacts as Contact[]);
+          setLoading(false);
+        });
+        WebSocketService.getContacts();
+      } catch (error) {
+        console.error("Failed to load contacts:", error);
+        setLoading(false);
+      }
+    };
+    loadContacts();
+  }, []);
+
+  const filteredContacts = contacts.filter((contact) =>
+    (contact.name || "").toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const handleCallContact = (
-    contact: (typeof MOCK_CONTACTS)[0],
-    isVideo: boolean,
-  ) => {
+  const handleCallContact = (contact: Contact, isVideo: boolean) => {
     navigation.replace("Call", {
       callId: contact.id,
       contactName: contact.name,
@@ -31,7 +59,7 @@ export const SelectContactScreen: React.FC = () => {
     });
   };
 
-  const renderContact = ({ item }: { item: (typeof MOCK_CONTACTS)[0] }) => (
+  const renderContact = ({ item }: { item: Contact }) => (
     <View
       className="flex-row items-center p-4 mb-2 rounded-lg"
       style={{
@@ -52,7 +80,7 @@ export const SelectContactScreen: React.FC = () => {
           className="font-semibold"
           style={{ color: theme.colors.textPrimary }}
         >
-          {item.name}
+          {item.name || item.armyId}
         </Text>
         <View className="flex-row items-center mt-1">
           <View
@@ -61,16 +89,14 @@ export const SelectContactScreen: React.FC = () => {
               backgroundColor:
                 item.status === "online"
                   ? theme.colors.success
-                  : item.status === "away"
-                    ? theme.colors.warning
-                    : theme.colors.textSecondary,
+                  : theme.colors.textSecondary,
             }}
           />
           <Text
             className="text-sm"
             style={{ color: theme.colors.textSecondary }}
           >
-            {item.rank || item.relation}
+            {item.designation || item.armyId}
           </Text>
         </View>
       </View>
@@ -153,27 +179,39 @@ export const SelectContactScreen: React.FC = () => {
       </View>
 
       {/* Contacts List */}
-      <FlatList
-        data={filteredContacts}
-        contentContainerClassName="p-4"
-        keyExtractor={(item) => item.id}
-        renderItem={renderContact}
-        ListEmptyComponent={
-          <View className="items-center py-12">
-            <Ionicons
-              name="people-outline"
-              size={64}
-              color={theme.colors.textSecondary}
-            />
-            <Text
-              className="text-lg mt-4"
-              style={{ color: theme.colors.textSecondary }}
-            >
-              No contacts found
-            </Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color={theme.colors.accent} />
+          <Text
+            className="text-sm mt-4"
+            style={{ color: theme.colors.textSecondary }}
+          >
+            Loading contacts...
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredContacts}
+          contentContainerClassName="p-4"
+          keyExtractor={(item) => item.id}
+          renderItem={renderContact}
+          ListEmptyComponent={
+            <View className="items-center py-12">
+              <Ionicons
+                name="people-outline"
+                size={64}
+                color={theme.colors.textSecondary}
+              />
+              <Text
+                className="text-lg mt-4"
+                style={{ color: theme.colors.textSecondary }}
+              >
+                No contacts found
+              </Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 };

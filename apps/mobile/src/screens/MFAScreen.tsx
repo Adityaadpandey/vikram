@@ -1,15 +1,16 @@
 import React, { useState, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert } from "react-native";
-import { MOCK_USERS } from "../services/mock/MockData";
-import { SecureStorage } from "../services/security/SecureStorage";
+import { AuthService } from "../services/auth/AuthService";
 
 interface MFAScreenProps {
   username: string;
+  phoneNumber: string;
   onVerified: () => void;
 }
 
 export const MFAScreen: React.FC<MFAScreenProps> = ({
   username,
+  phoneNumber,
   onVerified,
 }) => {
   const [code, setCode] = useState(["", "", "", "", "", ""]);
@@ -29,13 +30,22 @@ export const MFAScreen: React.FC<MFAScreenProps> = ({
 
   const handleVerify = async () => {
     const enteredCode = code.join("");
-    const user = Object.values(MOCK_USERS).find((u) => u.username === username);
 
-    if (user && enteredCode === user.mfaCode) {
-      await SecureStorage.saveToken("mock_jwt_token_12345");
+    try {
+      // Use real OTP verification via backend
+      const seedPhrase = ""; // User will enter seed phrase separately
+      await AuthService.verifyLoginOTP(
+        username,
+        phoneNumber,
+        enteredCode,
+        seedPhrase,
+      );
       onVerified();
-    } else {
-      Alert.alert("Invalid Code", "Please enter the correct MFA code");
+    } catch (error: any) {
+      Alert.alert(
+        "Verification Failed",
+        error.message || "Invalid OTP. Please try again.",
+      );
       setCode(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
     }
@@ -47,7 +57,7 @@ export const MFAScreen: React.FC<MFAScreenProps> = ({
         Two-Factor Authentication
       </Text>
       <Text className="text-military-lightGrey text-lg mb-8">
-        Enter the 6-digit code from your authenticator app
+        Enter the 6-digit code sent to your phone
       </Text>
 
       <View className="flex-row justify-between mb-8">
@@ -79,11 +89,6 @@ export const MFAScreen: React.FC<MFAScreenProps> = ({
           Verify
         </Text>
       </TouchableOpacity>
-
-      <Text className="text-military-grey text-sm text-center mt-6">
-        Mock MFA Code:{" "}
-        {MOCK_USERS[username as keyof typeof MOCK_USERS]?.mfaCode || "123456"}
-      </Text>
     </View>
   );
 };

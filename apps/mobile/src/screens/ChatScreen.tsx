@@ -20,10 +20,23 @@ import * as ImagePicker from "expo-image-picker";
 import { Audio } from "expo-av";
 import { IconButton } from "../components/common/IconButton";
 import { useTheme } from "../contexts/ThemeContext";
-import { MOCK_MESSAGES, Message } from "../services/mock/MockData";
 import { WebSocketService } from "../services/api/WebSocketService";
 import { EncryptionService } from "../services/security/EncryptionService";
 import { SecureStorage } from "../services/security/SecureStorage";
+
+interface Message {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: string;
+  isStarred?: boolean;
+  mentions?: string[];
+  type: "text" | "image" | "video" | "audio" | "document";
+  fileUrl?: string;
+  fileName?: string;
+  fileSize?: string;
+}
 
 const { width } = Dimensions.get("window");
 
@@ -34,9 +47,7 @@ export const ChatScreen: React.FC = () => {
   const { groupId, groupName, chatType, highlightMessageId } = route.params;
 
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<Message[]>(
-    MOCK_MESSAGES[groupId] || [],
-  );
+  const [messages, setMessages] = useState<Message[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);

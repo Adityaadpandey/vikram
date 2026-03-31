@@ -11,8 +11,8 @@ const Tab = createBottomTabNavigator();
 
 interface CustomTabBarButtonProps {
   children: React.ReactNode;
-  onPress: () => void;
-  accessibilityState?: { selected: boolean };
+  onPress?: (e: any) => void;
+  accessibilityState?: { selected?: boolean };
 }
 
 const CustomTabBarButton: React.FC<CustomTabBarButtonProps> = ({

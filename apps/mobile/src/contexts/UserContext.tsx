@@ -5,9 +5,10 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SecureStorage } from "../services/security/SecureStorage";
 
 interface UserProfile {
+  id: string;
   serviceId: string;
   name: string;
   rank: string;
@@ -20,25 +21,26 @@ interface UserContextType {
   profile: UserProfile;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   loadProfile: () => Promise<void>;
+  isLoaded: boolean;
 }
 
-const defaultProfile: UserProfile = {
-  serviceId: "DEF2025001",
-  name: "Captain Arjun Singh",
-  rank: "Captain",
-  unit: "5th Infantry Division",
-  phone: "+91 98765 43210",
+const emptyProfile: UserProfile = {
+  id: "",
+  serviceId: "",
+  name: "",
+  rank: "",
+  unit: "",
+  phone: "",
   profileImage: null,
 };
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-const USER_PROFILE_KEY = "@user_profile";
-
 export const UserProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const [profile, setProfile] = useState<UserProfile>(defaultProfile);
+  const [profile, setProfile] = useState<UserProfile>(emptyProfile);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -46,22 +48,41 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({
 
   const loadProfile = async () => {
     try {
-      const savedProfile = await AsyncStorage.getItem(USER_PROFILE_KEY);
-      if (savedProfile) {
-        setProfile(JSON.parse(savedProfile));
+      // Load from SecureStorage (synced with backend auth)
+      const userId = await SecureStorage.getUserId();
+      const armyId = await SecureStorage.getArmyId();
+      const name = await SecureStorage.getUserName();
+      const designation = await SecureStorage.getUserDesignation();
+      const phone = await SecureStorage.getPhoneNumber();
+
+      if (userId && armyId) {
+        setProfile({
+          id: userId,
+          serviceId: armyId,
+          name: name || "",
+          rank: designation || "",
+          unit: "",
+          phone: phone || "",
+          profileImage: null,
+        });
       }
+      setIsLoaded(true);
     } catch (error) {
-      console.error("Failed to load profile:", error);
+      console.error("Failed to load profile from SecureStorage:", error);
+      setIsLoaded(true);
     }
   };
 
   const updateProfile = async (updates: Partial<UserProfile>) => {
     try {
       const updatedProfile = { ...profile, ...updates };
-      await AsyncStorage.setItem(
-        USER_PROFILE_KEY,
-        JSON.stringify(updatedProfile),
-      );
+
+      // Persist back to SecureStorage
+      if (updates.name) await SecureStorage.setUserName(updates.name);
+      if (updates.rank) await SecureStorage.setUserDesignation(updates.rank);
+      if (updates.phone) await SecureStorage.setPhoneNumber(updates.phone);
+      if (updates.serviceId) await SecureStorage.setArmyId(updates.serviceId);
+
       setProfile(updatedProfile);
     } catch (error) {
       console.error("Failed to update profile:", error);
@@ -70,7 +91,9 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({
   };
 
   return (
-    <UserContext.Provider value={{ profile, updateProfile, loadProfile }}>
+    <UserContext.Provider
+      value={{ profile, updateProfile, loadProfile, isLoaded }}
+    >
       {children}
     </UserContext.Provider>
   );

@@ -1,193 +1,167 @@
 import crypto from "crypto";
-import { Server as HttpServer, IncomingMessage } from "http";
-import { WebSocket, WebSocketServer } from "ws";
+import { Server as HttpServer } from "http";
+import { Server, Socket } from "socket.io";
 import { prisma } from "../config/db";
 import logger from "../config/logger";
 import { redis } from "../config/redis";
 
-interface AuthenticatedWebSocket extends WebSocket {
+interface AuthenticatedSocket extends Socket {
   userId?: string;
   armyId?: string;
-  isAlive?: boolean;
 }
 
-interface WebSocketMessage {
-  type:
-    | "auth"
-    | "message"
-    | "typing"
-    | "read"
-    | "ping"
-    | "get_contacts"
-    | "add_friend"
-    | "request_public_key";
-  sessionToken?: string;
-  recipientId?: string;
-  encryptedContent?: string;
-  encryptedKey?: string; // Encrypted AES key
-  iv?: string; // Initialization vector for AES
-  messageId?: string;
-  timestamp?: number;
-  armyId?: string;
-}
-
-let wss: WebSocketServer;
-const clients = new Map<string, AuthenticatedWebSocket>();
+let io: Server;
+const clients = new Map<string, AuthenticatedSocket>();
 
 export const createWebSocketServer = (server: HttpServer) => {
-  wss = new WebSocketServer({
-    server,
-    perMessageDeflate: false,
+  io = new Server(server, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"],
+    },
+    transports: ["websocket", "polling"],
+    pingInterval: 25000,
+    pingTimeout: 20000,
   });
 
   const address = server.address();
   const port = typeof address === "string" ? address : address?.port;
-  logger.info(`WebSocket Server starting on PORT ${port}`);
+  logger.info(`Socket.IO Server starting on PORT ${port}`);
 
-  // Heartbeat interval to detect dead connections
-  const heartbeatInterval = setInterval(() => {
-    wss.clients.forEach((ws: AuthenticatedWebSocket) => {
-      if (ws.isAlive === false) {
-        logger.info(`Terminating inactive connection for user ${ws.userId}`);
-        return ws.terminate();
-      }
-      ws.isAlive = false;
-      ws.ping();
-    });
-  }, 30000);
+  io.on("connection", async (socket: AuthenticatedSocket) => {
+    try {
+      logger.info(`New Socket.IO connection: ${socket.id}`);
 
-  wss.on(
-    "connection",
-    async (ws: AuthenticatedWebSocket, req: IncomingMessage) => {
-      try {
-        logger.info("New WebSocket connection attempt");
-        ws.isAlive = true;
-
-        ws.on("pong", () => {
-          ws.isAlive = true;
-        });
-
-        ws.on("message", async (data: Buffer) => {
-          try {
-            const message: WebSocketMessage = JSON.parse(data.toString());
-
-            switch (message.type) {
-              case "auth":
-                await handleAuth(ws, message);
-                break;
-
-              case "message":
-                await handleMessage(ws, message);
-                break;
-
-              case "typing":
-                await handleTyping(ws, message);
-                break;
-
-              case "read":
-                await handleReadReceipt(ws, message);
-                break;
-
-              case "get_contacts":
-                await handleGetContacts(ws);
-                break;
-
-              case "add_friend":
-                await handleAddFriend(ws, message);
-                break;
-
-              case "request_public_key":
-                await handlePublicKeyRequest(ws, message);
-                break;
-
-              case "ping":
-                ws.send(
-                  JSON.stringify({ type: "pong", timestamp: Date.now() }),
-                );
-                break;
-
-              default:
-                ws.send(
-                  JSON.stringify({
-                    type: "error",
-                    message: "Unknown message type",
-                  }),
-                );
-            }
-          } catch (error) {
-            logger.error("Error processing message:", error);
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                message: "Failed to process message",
-              }),
-            );
+      // --- Authentication via "message" envelope (mobile sends {type: "auth", ...}) ---
+      socket.on("message", async (data: any) => {
+        try {
+          if (!data || !data.type) {
+            socket.emit("error", { message: "Invalid message format" });
+            return;
           }
-        });
 
-        ws.on("close", () => {
-          if (ws.userId) {
-            clients.delete(ws.userId);
-            logger.info(`User ${ws.userId} disconnected`);
+          switch (data.type) {
+            case "auth":
+              await handleAuth(socket, data);
+              break;
+            case "message":
+              await handleMessage(socket, data);
+              break;
+            case "typing":
+              await handleTyping(socket, data);
+              break;
+            case "read":
+              await handleReadReceipt(socket, data);
+              break;
+            case "get_contacts":
+              await handleGetContacts(socket);
+              break;
+            case "add_friend":
+              await handleAddFriend(socket, data);
+              break;
+            case "request_public_key":
+              await handlePublicKeyRequest(socket, data);
+              break;
+            case "ping":
+              socket.emit("pong", { timestamp: Date.now() });
+              break;
 
-            // Broadcast offline status to friends
-            broadcastUserStatus(ws.userId, "offline");
+            // --- Group handlers ---
+            case "create_group":
+              await handleCreateGroup(socket, data);
+              break;
+            case "group_message":
+              await handleGroupMessage(socket, data);
+              break;
+            case "get_groups":
+              await handleGetGroups(socket);
+              break;
+            case "add_group_member":
+              await handleAddGroupMember(socket, data);
+              break;
+            case "remove_group_member":
+              await handleRemoveGroupMember(socket, data);
+              break;
+            case "leave_group":
+              await handleLeaveGroup(socket, data);
+              break;
+
+            // --- WebRTC signaling stubs ---
+            case "call_offer":
+              handleCallSignal(socket, data, "call_offer");
+              break;
+            case "call_answer":
+              handleCallSignal(socket, data, "call_answer");
+              break;
+            case "ice_candidate":
+              handleCallSignal(socket, data, "ice_candidate");
+              break;
+            case "call_end":
+              handleCallSignal(socket, data, "call_end");
+              break;
+
+            default:
+              socket.emit("error", { message: "Unknown message type" });
           }
-        });
+        } catch (error) {
+          logger.error("Error processing message:", error);
+          socket.emit("error", { message: "Failed to process message" });
+        }
+      });
 
-        ws.on("error", (error) => {
-          logger.error("WebSocket error:", error);
-        });
-      } catch (error) {
-        logger.error("WebSocket connection error:", error);
-        ws.close();
-      }
-    },
-  );
+      // Also handle direct "auth" event (mobile tries both patterns)
+      socket.on("auth", async (data: any) => {
+        try {
+          await handleAuth(socket, { ...data, type: "auth" });
+        } catch (error) {
+          logger.error("Error processing direct auth:", error);
+          socket.emit("error", { message: "Authentication failed" });
+        }
+      });
 
-  wss.on("error", (error: any) => {
-    logger.error("WebSocket Server error:", error);
+      socket.on("disconnect", (reason) => {
+        if (socket.userId) {
+          clients.delete(socket.userId);
+          logger.info(`User ${socket.userId} disconnected: ${reason}`);
+          broadcastUserStatus(socket.userId, "offline");
+        }
+      });
+
+      socket.on("error", (error) => {
+        logger.error("Socket error:", error);
+      });
+    } catch (error) {
+      logger.error("Socket connection error:", error);
+      socket.disconnect();
+    }
   });
 
-  wss.on("close", () => {
-    clearInterval(heartbeatInterval);
+  io.engine.on("connection_error", (err: any) => {
+    logger.error("Connection error:", err);
   });
 
-  return wss;
+  return io;
 };
 
-// Handle authentication
-async function handleAuth(
-  ws: AuthenticatedWebSocket,
-  message: WebSocketMessage,
-) {
+// ==================== Authentication ====================
+async function handleAuth(socket: AuthenticatedSocket, data: any) {
   try {
-    if (!message.sessionToken) {
-      ws.send(
-        JSON.stringify({
-          type: "auth_error",
-          message: "Session token required",
-        }),
-      );
-      return ws.close();
+    const sessionToken = data.sessionToken;
+    if (!sessionToken) {
+      socket.emit("auth_error", { message: "Session token required" });
+      socket.disconnect();
+      return;
     }
 
-    // Verify session from Redis
-    const sessionData = await redis.get(`session:${message.sessionToken}`);
-
+    const sessionData = await redis.get(`session:${sessionToken}`);
     if (!sessionData) {
-      ws.send(
-        JSON.stringify({
-          type: "auth_error",
-          message: "Invalid or expired session",
-        }),
-      );
-      return ws.close();
+      socket.emit("auth_error", { message: "Invalid or expired session" });
+      socket.disconnect();
+      return;
     }
 
     const session = JSON.parse(sessionData);
 
-    // Verify user exists in database
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
       include: {
@@ -199,273 +173,177 @@ async function handleAuth(
     });
 
     if (!user) {
-      ws.send(
-        JSON.stringify({
-          type: "auth_error",
-          message: "User not found",
-        }),
-      );
-      return ws.close();
+      socket.emit("auth_error", { message: "User not found" });
+      socket.disconnect();
+      return;
     }
 
-    // Store user info in WebSocket
-    ws.userId = user.id;
-    ws.armyId = user.armyId;
+    socket.userId = user.id;
+    socket.armyId = user.armyId;
+    clients.set(user.id, socket);
 
-    // Add to clients map
-    clients.set(user.id, ws);
+    logger.info(`User ${user.armyId} authenticated via Socket.IO`);
 
-    logger.info(`User ${user.armyId} authenticated successfully`);
+    socket.emit("auth_success", {
+      userId: user.id,
+      armyId: user.armyId,
+      publicKey: user.keys[0]?.publicKey,
+    });
 
-    // Send auth success with user public key
-    ws.send(
-      JSON.stringify({
-        type: "auth_success",
-        userId: user.id,
-        armyId: user.armyId,
-        publicKey: user.keys[0]?.publicKey,
-      }),
-    );
-
-    // Deliver pending messages
-    await deliverPendingMessages(ws, user.id);
-
-    // Broadcast online status to friends
+    await deliverPendingMessages(socket, user.id);
     broadcastUserStatus(user.id, "online");
   } catch (error) {
     logger.error("Authentication error:", error);
-    ws.send(
-      JSON.stringify({
-        type: "auth_error",
-        message: "Authentication failed",
-      }),
-    );
-    ws.close();
+    socket.emit("auth_error", { message: "Authentication failed" });
+    socket.disconnect();
   }
 }
 
-// Handle sending E2E encrypted messages
-async function handleMessage(
-  ws: AuthenticatedWebSocket,
-  message: WebSocketMessage,
-) {
+// ==================== Direct Messages ====================
+async function handleMessage(socket: AuthenticatedSocket, data: any) {
   try {
-    if (!ws.userId) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Not authenticated",
-        }),
-      );
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
     }
 
     if (
-      !message.recipientId ||
-      !message.encryptedContent ||
-      !message.encryptedKey ||
-      !message.iv
+      !data.recipientId ||
+      !data.encryptedContent ||
+      !data.encryptedKey ||
+      !data.iv
     ) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message:
-            "Missing required fields: recipientId, encryptedContent, encryptedKey, and iv are required for E2E encryption",
-        }),
-      );
+      return socket.emit("error", {
+        message:
+          "Missing required fields: recipientId, encryptedContent, encryptedKey, iv",
+      });
     }
 
-    // Verify recipient exists
     const recipient = await prisma.user.findUnique({
-      where: { id: message.recipientId },
+      where: { id: data.recipientId },
     });
 
     if (!recipient) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Recipient not found",
-        }),
-      );
+      return socket.emit("error", { message: "Recipient not found" });
     }
 
-    // Create message object
     const messageData = {
       type: "message",
       messageId:
-        message.messageId ||
+        data.messageId ||
         `msg_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`,
-      senderId: ws.userId,
-      senderArmyId: ws.armyId,
-      recipientId: message.recipientId,
-      encryptedContent: message.encryptedContent, // AES encrypted content
-      encryptedKey: message.encryptedKey, // RSA encrypted AES key
-      iv: message.iv, // IV for AES decryption
-      timestamp: message.timestamp || Date.now(),
+      senderId: socket.userId,
+      senderArmyId: socket.armyId,
+      recipientId: data.recipientId,
+      encryptedContent: data.encryptedContent,
+      encryptedKey: data.encryptedKey,
+      iv: data.iv,
+      timestamp: data.timestamp || Date.now(),
       status: "sent",
     };
 
-    // Store message in Redis for offline delivery (expires in 7 days)
+    // Store in Redis for offline delivery
     await redis.setex(
       `message:${messageData.messageId}`,
       604800,
       JSON.stringify(messageData),
     );
+    await redis.lpush(`pending:${data.recipientId}`, messageData.messageId);
 
-    // Add to recipient's pending messages queue
-    await redis.lpush(`pending:${message.recipientId}`, messageData.messageId);
-
-    // Optionally persist to database for long-term storage
+    // Persist to DB
     try {
       await prisma.message.create({
         data: {
           id: messageData.messageId,
-          senderId: ws.userId,
-          recipientId: message.recipientId,
-          encryptedContent: message.encryptedContent,
-          encryptedKey: message.encryptedKey,
-          iv: message.iv,
+          senderId: socket.userId,
+          recipientId: data.recipientId,
+          encryptedContent: data.encryptedContent,
+          encryptedKey: data.encryptedKey,
+          iv: data.iv,
           status: "sent",
           timestamp: new Date(messageData.timestamp),
         },
       });
     } catch (dbError) {
       logger.warn("Failed to persist message to database:", dbError);
-      // Continue even if DB save fails - message is in Redis
     }
 
-    // Send confirmation to sender
-    ws.send(
-      JSON.stringify({
-        type: "message_sent",
-        messageId: messageData.messageId,
-        timestamp: messageData.timestamp,
-      }),
-    );
+    socket.emit("message_sent", {
+      messageId: messageData.messageId,
+      timestamp: messageData.timestamp,
+    });
 
-    // Try to deliver to recipient if online
-    const recipientWs = clients.get(message.recipientId);
-    if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
-      recipientWs.send(JSON.stringify(messageData));
-
-      // Update message status
+    // Deliver to recipient if online
+    const recipientSocket = clients.get(data.recipientId);
+    if (recipientSocket?.connected) {
+      recipientSocket.emit("message", messageData);
       messageData.status = "delivered";
       await redis.setex(
         `message:${messageData.messageId}`,
         604800,
         JSON.stringify(messageData),
       );
-
-      // Remove from pending queue since it was delivered
-      await redis.lrem(
-        `pending:${message.recipientId}`,
-        1,
-        messageData.messageId,
-      );
+      await redis.lrem(`pending:${data.recipientId}`, 1, messageData.messageId);
     }
 
     logger.info(
-      `E2E encrypted message ${messageData.messageId} sent from ${ws.userId} to ${message.recipientId}`,
+      `Message ${messageData.messageId} sent from ${socket.userId} to ${data.recipientId}`,
     );
   } catch (error) {
     logger.error("Error handling message:", error);
-    ws.send(
-      JSON.stringify({
-        type: "error",
-        message: "Failed to send message",
-      }),
-    );
+    socket.emit("error", { message: "Failed to send message" });
   }
 }
 
-// Deliver pending messages when user comes online
+// ==================== Offline Message Delivery ====================
 async function deliverPendingMessages(
-  ws: AuthenticatedWebSocket,
+  socket: AuthenticatedSocket,
   userId: string,
 ) {
   try {
-    // Get all pending message IDs for this user
     const pendingMessageIds = await redis.lrange(`pending:${userId}`, 0, -1);
-
-    if (pendingMessageIds.length === 0) {
-      return;
-    }
+    if (pendingMessageIds.length === 0) return;
 
     logger.info(
-      `Delivering ${pendingMessageIds.length} pending messages to user ${userId}`,
+      `Delivering ${pendingMessageIds.length} pending messages to ${userId}`,
     );
 
-    // Deliver each pending message
     for (const messageId of pendingMessageIds) {
       const messageData = await redis.get(`message:${messageId}`);
-
       if (messageData) {
         const msg = JSON.parse(messageData);
+        socket.emit("message", { ...msg, status: "delivered" });
 
-        // Send the message
-        ws.send(
-          JSON.stringify({
-            ...msg,
-            status: "delivered",
-          }),
-        );
-
-        // Update status in Redis
         msg.status = "delivered";
         await redis.setex(`message:${messageId}`, 604800, JSON.stringify(msg));
 
-        // Update in database if exists
         try {
           await prisma.message.update({
             where: { id: messageId },
             data: { status: "delivered" },
           });
         } catch (dbError) {
-          logger.warn(
-            `Failed to update message ${messageId} in database:`,
-            dbError,
-          );
+          logger.warn(`Failed to update message ${messageId}:`, dbError);
         }
       }
-
-      // Remove from pending queue
       await redis.lrem(`pending:${userId}`, 1, messageId);
     }
-
-    logger.info(
-      `Successfully delivered ${pendingMessageIds.length} pending messages to user ${userId}`,
-    );
   } catch (error) {
     logger.error("Error delivering pending messages:", error);
   }
 }
 
-// Handle public key request (for E2E encryption setup)
-async function handlePublicKeyRequest(
-  ws: AuthenticatedWebSocket,
-  message: WebSocketMessage,
-) {
+// ==================== Public Key Request ====================
+async function handlePublicKeyRequest(socket: AuthenticatedSocket, data: any) {
   try {
-    if (!ws.userId) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Not authenticated",
-        }),
-      );
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
+    }
+    if (!data.recipientId) {
+      return socket.emit("error", { message: "Recipient ID required" });
     }
 
-    if (!message.recipientId) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Recipient ID required",
-        }),
-      );
-    }
-
-    // Get recipient's public key
     const recipient = await prisma.user.findUnique({
-      where: { id: message.recipientId },
+      where: { id: data.recipientId },
       include: {
         keys: {
           orderBy: { createdAt: "desc" },
@@ -475,101 +353,71 @@ async function handlePublicKeyRequest(
     });
 
     if (!recipient || recipient.keys.length === 0) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Recipient or public key not found",
-        }),
-      );
+      return socket.emit("error", {
+        message: "Recipient or public key not found",
+      });
     }
 
-    ws.send(
-      JSON.stringify({
-        type: "public_key_response",
-        userId: recipient.id,
-        armyId: recipient.armyId,
-        publicKey: recipient.keys[0].publicKey,
-      }),
-    );
+    socket.emit("public_key_response", {
+      userId: recipient.id,
+      armyId: recipient.armyId,
+      publicKey: recipient.keys[0].publicKey,
+    });
   } catch (error) {
     logger.error("Error handling public key request:", error);
-    ws.send(
-      JSON.stringify({
-        type: "error",
-        message: "Failed to get public key",
-      }),
-    );
+    socket.emit("error", { message: "Failed to get public key" });
   }
 }
 
-// Handle typing indicators
-async function handleTyping(
-  ws: AuthenticatedWebSocket,
-  message: WebSocketMessage,
-) {
-  if (!ws.userId || !message.recipientId) return;
+// ==================== Typing Indicator ====================
+async function handleTyping(socket: AuthenticatedSocket, data: any) {
+  if (!socket.userId || !data.recipientId) return;
 
-  const recipientWs = clients.get(message.recipientId);
-  if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
-    recipientWs.send(
-      JSON.stringify({
-        type: "typing",
-        userId: ws.userId,
-        armyId: ws.armyId,
-      }),
-    );
+  const recipientSocket = clients.get(data.recipientId);
+  if (recipientSocket?.connected) {
+    recipientSocket.emit("typing", {
+      userId: socket.userId,
+      armyId: socket.armyId,
+    });
   }
 }
 
-// Handle read receipts
-async function handleReadReceipt(
-  ws: AuthenticatedWebSocket,
-  message: WebSocketMessage,
-) {
-  if (!ws.userId || !message.messageId) return;
+// ==================== Read Receipts ====================
+async function handleReadReceipt(socket: AuthenticatedSocket, data: any) {
+  if (!socket.userId || !data.messageId) return;
 
-  // Update message status in Redis
-  const messageData = await redis.get(`message:${message.messageId}`);
+  const messageData = await redis.get(`message:${data.messageId}`);
   if (messageData) {
     const msg = JSON.parse(messageData);
     msg.status = "read";
-    await redis.setex(
-      `message:${message.messageId}`,
-      604800,
-      JSON.stringify(msg),
-    );
+    await redis.setex(`message:${data.messageId}`, 604800, JSON.stringify(msg));
 
-    // Update in database
     try {
       await prisma.message.update({
-        where: { id: message.messageId },
+        where: { id: data.messageId },
         data: { status: "read" },
       });
     } catch (dbError) {
       logger.warn("Failed to update message status in database:", dbError);
     }
 
-    // Notify sender
-    const senderWs = clients.get(msg.senderId);
-    if (senderWs && senderWs.readyState === WebSocket.OPEN) {
-      senderWs.send(
-        JSON.stringify({
-          type: "message_read",
-          messageId: message.messageId,
-          readBy: ws.userId,
-        }),
-      );
+    const senderSocket = clients.get(msg.senderId);
+    if (senderSocket?.connected) {
+      senderSocket.emit("message_read", {
+        messageId: data.messageId,
+        readBy: socket.userId,
+      });
     }
   }
 }
 
-// Handle get contacts
-async function handleGetContacts(ws: AuthenticatedWebSocket) {
+// ==================== Contacts ====================
+async function handleGetContacts(socket: AuthenticatedSocket) {
   try {
-    if (!ws.userId) return;
+    if (!socket.userId) return;
 
     const user = await prisma.user.findUnique({
-      where: { id: ws.userId },
+      where: { id: socket.userId },
       include: {
         Friends: {
           include: {
@@ -600,41 +448,22 @@ async function handleGetContacts(ws: AuthenticatedWebSocket) {
       status: clients.has(f.friend.id) ? "online" : "offline",
     }));
 
-    ws.send(
-      JSON.stringify({
-        type: "contacts",
-        contacts,
-      }),
-    );
+    socket.emit("contacts", { contacts });
   } catch (error) {
     logger.error("Error getting contacts:", error);
-    ws.send(
-      JSON.stringify({
-        type: "error",
-        message: "Failed to get contacts",
-      }),
-    );
+    socket.emit("error", { message: "Failed to get contacts" });
   }
 }
 
-// Handle add friend
-async function handleAddFriend(
-  ws: AuthenticatedWebSocket,
-  message: WebSocketMessage,
-) {
+// ==================== Add Friend ====================
+async function handleAddFriend(socket: AuthenticatedSocket, data: any) {
   try {
-    if (!ws.userId || !message.armyId) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Army ID required",
-        }),
-      );
+    if (!socket.userId || !data.armyId) {
+      return socket.emit("error", { message: "Army ID required" });
     }
 
-    // Find friend by army ID
     const friend = await prisma.user.findUnique({
-      where: { armyId: message.armyId },
+      where: { armyId: data.armyId },
       include: {
         keys: {
           orderBy: { createdAt: "desc" },
@@ -644,72 +473,44 @@ async function handleAddFriend(
     });
 
     if (!friend) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "User not found",
-        }),
-      );
+      return socket.emit("error", { message: "User not found" });
     }
 
-    if (friend.id === ws.userId) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Cannot add yourself as friend",
-        }),
-      );
+    if (friend.id === socket.userId) {
+      return socket.emit("error", { message: "Cannot add yourself as friend" });
     }
 
-    // Check if already friends
     const existingFriend = await prisma.friend.findFirst({
-      where: {
-        userId: ws.userId,
-        friendId: friend.id,
-      },
+      where: { userId: socket.userId, friendId: friend.id },
     });
 
     if (existingFriend) {
-      return ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Already friends",
-        }),
-      );
+      return socket.emit("error", { message: "Already friends" });
     }
 
-    // Create friend relationship (bidirectional)
+    // Bidirectional friendship
     await prisma.friend.createMany({
       data: [
-        {
-          userId: ws.userId,
-          friendId: friend.id,
-        },
-        {
-          userId: friend.id,
-          friendId: ws.userId,
-        },
+        { userId: socket.userId, friendId: friend.id },
+        { userId: friend.id, friendId: socket.userId },
       ],
     });
 
-    ws.send(
-      JSON.stringify({
-        type: "friend_added",
-        friend: {
-          id: friend.id,
-          armyId: friend.armyId,
-          name: friend.name,
-          designation: friend.designation,
-          publicKey: friend.keys[0]?.publicKey,
-        },
-      }),
-    );
+    socket.emit("friend_added", {
+      friend: {
+        id: friend.id,
+        armyId: friend.armyId,
+        name: friend.name,
+        designation: friend.designation,
+        publicKey: friend.keys[0]?.publicKey,
+      },
+    });
 
-    // Notify the friend if they're online
-    const friendWs = clients.get(friend.id);
-    if (friendWs && friendWs.readyState === WebSocket.OPEN) {
+    // Notify the friend if online
+    const friendSocket = clients.get(friend.id);
+    if (friendSocket?.connected) {
       const currentUser = await prisma.user.findUnique({
-        where: { id: ws.userId },
+        where: { id: socket.userId },
         include: {
           keys: {
             orderBy: { createdAt: "desc" },
@@ -718,31 +519,434 @@ async function handleAddFriend(
         },
       });
 
-      friendWs.send(
-        JSON.stringify({
-          type: "friend_added",
-          friend: {
-            id: currentUser!.id,
-            armyId: currentUser!.armyId,
-            name: currentUser!.name,
-            designation: currentUser!.designation,
-            publicKey: currentUser!.keys[0]?.publicKey,
-          },
-        }),
-      );
+      friendSocket.emit("friend_added", {
+        friend: {
+          id: currentUser!.id,
+          armyId: currentUser!.armyId,
+          name: currentUser!.name,
+          designation: currentUser!.designation,
+          publicKey: currentUser!.keys[0]?.publicKey,
+        },
+      });
     }
   } catch (error) {
     logger.error("Error adding friend:", error);
-    ws.send(
-      JSON.stringify({
-        type: "error",
-        message: "Failed to add friend",
-      }),
-    );
+    socket.emit("error", { message: "Failed to add friend" });
   }
 }
 
-// Broadcast user status to friends
+// ==================== Group: Create ====================
+async function handleCreateGroup(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
+    }
+    if (!data.groupName || !data.memberIds || !Array.isArray(data.memberIds)) {
+      return socket.emit("error", {
+        message: "groupName and memberIds[] required",
+      });
+    }
+
+    // Ensure creator is in the members list
+    const memberIds: string[] = Array.from(
+      new Set([socket.userId, ...data.memberIds]),
+    );
+
+    const group = await prisma.group.create({
+      data: {
+        name: data.groupName,
+        createdById: socket.userId,
+        members: {
+          create: memberIds.map((uid) => ({
+            userId: uid,
+            role: uid === socket.userId ? "admin" : "member",
+          })),
+        },
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                armyId: true,
+                name: true,
+                designation: true,
+                keys: {
+                  select: { publicKey: true },
+                  orderBy: { createdAt: "desc" },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const groupPayload = {
+      groupId: group.id,
+      groupName: group.name,
+      createdBy: socket.userId,
+      members: group.members.map((m) => ({
+        id: m.user.id,
+        armyId: m.user.armyId,
+        name: m.user.name,
+        designation: m.user.designation,
+        publicKey: m.user.keys[0]?.publicKey,
+        role: m.role,
+      })),
+    };
+
+    // Notify all members
+    for (const memberId of memberIds) {
+      const memberSocket = clients.get(memberId);
+      if (memberSocket?.connected) {
+        memberSocket.emit("group_created", groupPayload);
+      }
+    }
+
+    logger.info(`Group "${group.name}" created by ${socket.userId}`);
+  } catch (error) {
+    logger.error("Error creating group:", error);
+    socket.emit("error", { message: "Failed to create group" });
+  }
+}
+
+// ==================== Group: Message ====================
+async function handleGroupMessage(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
+    }
+    if (
+      !data.groupId ||
+      !data.encryptedContent ||
+      !data.encryptedKeys ||
+      !data.iv
+    ) {
+      return socket.emit("error", {
+        message: "groupId, encryptedContent, encryptedKeys, iv required",
+      });
+    }
+
+    // Verify sender is a member
+    const membership = await prisma.groupMember.findUnique({
+      where: {
+        groupId_userId: { groupId: data.groupId, userId: socket.userId },
+      },
+    });
+
+    if (!membership) {
+      return socket.emit("error", {
+        message: "You are not a member of this group",
+      });
+    }
+
+    const messageId =
+      data.messageId ||
+      `grp_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`;
+
+    // Persist to DB
+    try {
+      await prisma.message.create({
+        data: {
+          id: messageId,
+          senderId: socket.userId,
+          groupId: data.groupId,
+          encryptedContent: data.encryptedContent,
+          encryptedKeys: data.encryptedKeys,
+          iv: data.iv,
+          status: "sent",
+          timestamp: new Date(data.timestamp || Date.now()),
+        },
+      });
+    } catch (dbError) {
+      logger.warn("Failed to persist group message:", dbError);
+    }
+
+    // Get all group members
+    const members = await prisma.groupMember.findMany({
+      where: { groupId: data.groupId },
+      select: { userId: true },
+    });
+
+    const senderUser = await prisma.user.findUnique({
+      where: { id: socket.userId },
+      select: { name: true, armyId: true },
+    });
+
+    const messagePayload = {
+      type: "group_message",
+      messageId,
+      groupId: data.groupId,
+      senderId: socket.userId,
+      senderName: senderUser?.name || socket.armyId,
+      senderArmyId: socket.armyId,
+      encryptedContent: data.encryptedContent,
+      encryptedKeys: data.encryptedKeys,
+      iv: data.iv,
+      timestamp: data.timestamp || Date.now(),
+      status: "sent",
+    };
+
+    // Send confirmation to sender
+    socket.emit("message_sent", {
+      messageId,
+      timestamp: messagePayload.timestamp,
+    });
+
+    // Broadcast to all members except sender
+    for (const member of members) {
+      if (member.userId === socket.userId) continue;
+      const memberSocket = clients.get(member.userId);
+      if (memberSocket?.connected) {
+        memberSocket.emit("group_message", messagePayload);
+      }
+    }
+
+    logger.info(`Group message ${messageId} sent to group ${data.groupId}`);
+  } catch (error) {
+    logger.error("Error handling group message:", error);
+    socket.emit("error", { message: "Failed to send group message" });
+  }
+}
+
+// ==================== Group: Get Groups ====================
+async function handleGetGroups(socket: AuthenticatedSocket) {
+  try {
+    if (!socket.userId) return;
+
+    const memberships = await prisma.groupMember.findMany({
+      where: { userId: socket.userId },
+      include: {
+        group: {
+          include: {
+            members: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    armyId: true,
+                    name: true,
+                    designation: true,
+                    keys: {
+                      select: { publicKey: true },
+                      orderBy: { createdAt: "desc" },
+                      take: 1,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const groups = memberships.map((m) => ({
+      id: m.group.id,
+      name: m.group.name,
+      createdById: m.group.createdById,
+      role: m.role,
+      members: m.group.members.map((gm) => ({
+        id: gm.user.id,
+        armyId: gm.user.armyId,
+        name: gm.user.name,
+        designation: gm.user.designation,
+        publicKey: gm.user.keys[0]?.publicKey,
+        role: gm.role,
+      })),
+    }));
+
+    socket.emit("groups", { groups });
+  } catch (error) {
+    logger.error("Error getting groups:", error);
+    socket.emit("error", { message: "Failed to get groups" });
+  }
+}
+
+// ==================== Group: Add Member ====================
+async function handleAddGroupMember(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
+    }
+    if (!data.groupId || !data.userId) {
+      return socket.emit("error", { message: "groupId and userId required" });
+    }
+
+    // Verify requester is admin
+    const requesterMembership = await prisma.groupMember.findUnique({
+      where: {
+        groupId_userId: { groupId: data.groupId, userId: socket.userId },
+      },
+    });
+
+    if (!requesterMembership || requesterMembership.role !== "admin") {
+      return socket.emit("error", { message: "Only admins can add members" });
+    }
+
+    // Check if user exists
+    const userToAdd = await prisma.user.findUnique({
+      where: { id: data.userId },
+      select: { id: true, name: true, armyId: true },
+    });
+
+    if (!userToAdd) {
+      return socket.emit("error", { message: "User not found" });
+    }
+
+    // Add member
+    await prisma.groupMember.create({
+      data: {
+        groupId: data.groupId,
+        userId: data.userId,
+        role: "member",
+      },
+    });
+
+    // Notify all group members
+    const members = await prisma.groupMember.findMany({
+      where: { groupId: data.groupId },
+      select: { userId: true },
+    });
+
+    for (const member of members) {
+      const memberSocket = clients.get(member.userId);
+      if (memberSocket?.connected) {
+        memberSocket.emit("member_added", {
+          groupId: data.groupId,
+          userId: userToAdd.id,
+          userName: userToAdd.name,
+        });
+      }
+    }
+
+    logger.info(`User ${data.userId} added to group ${data.groupId}`);
+  } catch (error) {
+    logger.error("Error adding group member:", error);
+    socket.emit("error", { message: "Failed to add member" });
+  }
+}
+
+// ==================== Group: Remove Member ====================
+async function handleRemoveGroupMember(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
+    }
+    if (!data.groupId || !data.userId) {
+      return socket.emit("error", { message: "groupId and userId required" });
+    }
+
+    const requesterMembership = await prisma.groupMember.findUnique({
+      where: {
+        groupId_userId: { groupId: data.groupId, userId: socket.userId },
+      },
+    });
+
+    if (!requesterMembership || requesterMembership.role !== "admin") {
+      return socket.emit("error", {
+        message: "Only admins can remove members",
+      });
+    }
+
+    await prisma.groupMember.delete({
+      where: {
+        groupId_userId: { groupId: data.groupId, userId: data.userId },
+      },
+    });
+
+    // Notify
+    const members = await prisma.groupMember.findMany({
+      where: { groupId: data.groupId },
+      select: { userId: true },
+    });
+
+    const removedSocket = clients.get(data.userId);
+    if (removedSocket?.connected) {
+      removedSocket.emit("member_removed", {
+        groupId: data.groupId,
+        userId: data.userId,
+      });
+    }
+
+    for (const member of members) {
+      const memberSocket = clients.get(member.userId);
+      if (memberSocket?.connected) {
+        memberSocket.emit("member_removed", {
+          groupId: data.groupId,
+          userId: data.userId,
+        });
+      }
+    }
+
+    logger.info(`User ${data.userId} removed from group ${data.groupId}`);
+  } catch (error) {
+    logger.error("Error removing group member:", error);
+    socket.emit("error", { message: "Failed to remove member" });
+  }
+}
+
+// ==================== Group: Leave ====================
+async function handleLeaveGroup(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
+    }
+    if (!data.groupId) {
+      return socket.emit("error", { message: "groupId required" });
+    }
+
+    await prisma.groupMember.delete({
+      where: {
+        groupId_userId: { groupId: data.groupId, userId: socket.userId },
+      },
+    });
+
+    const members = await prisma.groupMember.findMany({
+      where: { groupId: data.groupId },
+      select: { userId: true },
+    });
+
+    for (const member of members) {
+      const memberSocket = clients.get(member.userId);
+      if (memberSocket?.connected) {
+        memberSocket.emit("member_removed", {
+          groupId: data.groupId,
+          userId: socket.userId,
+        });
+      }
+    }
+
+    socket.emit("group_left", { groupId: data.groupId });
+    logger.info(`User ${socket.userId} left group ${data.groupId}`);
+  } catch (error) {
+    logger.error("Error leaving group:", error);
+    socket.emit("error", { message: "Failed to leave group" });
+  }
+}
+
+// ==================== WebRTC Signaling Relay ====================
+function handleCallSignal(
+  socket: AuthenticatedSocket,
+  data: any,
+  eventType: string,
+) {
+  if (!socket.userId || !data.recipientId) return;
+
+  const recipientSocket = clients.get(data.recipientId);
+  if (recipientSocket?.connected) {
+    recipientSocket.emit(eventType, {
+      ...data,
+      senderId: socket.userId,
+      senderArmyId: socket.armyId,
+    });
+  }
+}
+
+// ==================== Broadcast Status ====================
 async function broadcastUserStatus(
   userId: string,
   status: "online" | "offline",
@@ -759,17 +963,17 @@ async function broadcastUserStatus(
 
     if (!user) return;
 
-    const statusMessage = JSON.stringify({
+    const statusMessage = {
       type: "user_status",
       userId,
       armyId: user.armyId,
       status,
-    });
+    };
 
     user.FriendOf.forEach((f) => {
-      const friendWs = clients.get(f.userId);
-      if (friendWs && friendWs.readyState === WebSocket.OPEN) {
-        friendWs.send(statusMessage);
+      const friendSocket = clients.get(f.userId);
+      if (friendSocket?.connected) {
+        friendSocket.emit("status_update", statusMessage);
       }
     });
   } catch (error) {
@@ -778,11 +982,11 @@ async function broadcastUserStatus(
 }
 
 export const closeWebSocketServer = async () => {
-  if (wss) {
-    logger.info("Closing WebSocket server...");
-    await new Promise<void>((resolve) => wss.close(() => resolve()));
-    logger.info("WebSocket server closed.");
+  if (io) {
+    logger.info("Closing Socket.IO server...");
+    await new Promise<void>((resolve) => io.close(() => resolve()));
+    logger.info("Socket.IO server closed.");
   }
 };
 
-export { clients, wss };
+export { clients, io as wss };

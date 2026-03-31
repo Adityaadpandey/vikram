@@ -18,11 +18,14 @@ model User {
   updatedAt   DateTime @updatedAt
 
   // Relationships
-  keys             Key[]      @relation("UserKeys")
-  Friends          Friend[]   @relation("UserFriends")
-  FriendOf         Friend[]   @relation("FriendOfUser")
-  SentMessages     Message[]  @relation("SentMessages")
-  ReceivedMessages Message[]  @relation("ReceivedMessages")
+  keys             Key[]          @relation("UserKeys")
+  Friends          Friend[]       @relation("UserFriends")
+  FriendOf         Friend[]       @relation("FriendOfUser")
+  SentMessages     Message[]      @relation("SentMessages")
+  ReceivedMessages Message[]      @relation("ReceivedMessages")
+  Notifications    Notification[] @relation("UserNotifications")
+  GroupMembers     GroupMember[]   @relation("UserGroupMembers")
+  CreatedGroups    Group[]        @relation("GroupCreator")
 
   @@map("users")
 }
@@ -58,22 +61,57 @@ model Friend {
 model Message {
   id               String   @id
   senderId         String
-  recipientId      String
+  recipientId      String?
+  groupId          String?
   encryptedContent String   @db.Text
-  encryptedKey     String   @db.Text
+  encryptedKey     String?  @db.Text
+  encryptedKeys    Json?    // For group messages: { userId: encryptedKey }
   iv               String
   status           String   // 'sent', 'delivered', 'read'
   timestamp        DateTime
   createdAt        DateTime @default(now())
 
-  sender    User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  recipient User @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  sender    User  @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User? @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  group     Group? @relation("GroupMessages", fields: [groupId], references: [id], onDelete: Cascade)
 
   @@index([senderId])
   @@index([recipientId])
+  @@index([groupId])
   @@index([timestamp])
   @@index([status])
   @@map("messages")
+}
+
+model Group {
+  id          String   @id @default(uuid())
+  name        String
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User          @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members   GroupMember[]  @relation("GroupMembers")
+  messages  Message[]      @relation("GroupMessages")
+
+  @@index([createdById])
+  @@map("groups")
+}
+
+model GroupMember {
+  id        String   @id @default(uuid())
+  groupId   String
+  userId    String
+  role      String   @default("member") // 'admin', 'member'
+  joinedAt  DateTime @default(now())
+
+  group Group @relation("GroupMembers", fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation("UserGroupMembers", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("group_members")
 }
 
 model Notification {
@@ -82,7 +120,7 @@ model Notification {
   message   String
   createdAt DateTime @default(now())
 
-  // user User @relation(fields: [userId], references: [id])
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("notifications")

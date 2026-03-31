@@ -17,8 +17,8 @@ interface Config {
 }
 
 export const config: Config = {
-  SERVICE_NAME: require("../../package.json").name || "api-gateway",
-  PORT: parseInt(process.env.PORT || "7001", 10),
+  SERVICE_NAME: require("../../package.json").name || "ws-service",
+  PORT: parseInt(process.env.PORT || "7002", 10),
   LOG_LEVEL: process.env.LOG_LEVEL || "info",
   NODE_ENV: process.env.NODE_ENV || "development",
   REDIS_URL: process.env.REDIS_URL || "",
