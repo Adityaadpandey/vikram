@@ -27,7 +27,18 @@ app.get("/health", (req: Request, res: Response) => {
 });
 
 // Route proxies
-proxyServices(app);
+const wsProxies = proxyServices(app);
+
+// Handle WebSockets upgrades for ws proxies
+server.on("upgrade", (req, socket, head) => {
+  wsProxies.forEach((wsProxy) => {
+    // Basic check if the URL should be handled by this proxy, otherwise it might intercept everything
+    // But since we only have one WS proxy, it's generally safe. createProxyMiddleware.upgrade often handles its own path checking
+    if (typeof wsProxy.upgrade === "function") {
+      wsProxy.upgrade(req, socket, head);
+    }
+  });
+});
 
 // 404
 app.use((req: Request, res: Response) => {

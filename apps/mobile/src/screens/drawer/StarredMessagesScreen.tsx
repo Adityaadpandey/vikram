@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,12 +9,20 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../contexts/ThemeContext";
-import { getStarredMessages } from "../../services/mock/MockData";
+import { WebSocketService } from "../../services/api/WebSocketService";
 
 export const StarredMessagesScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { theme, isDark } = useTheme();
-  const starredMessages = getStarredMessages();
+  const [starredMessages, setStarredMessages] = useState<any[]>([]);
+
+  useEffect(() => {
+    WebSocketService.getStarredMessages();
+    const cleanup = WebSocketService.onStarredMessages((messages) => {
+      setStarredMessages(messages);
+    });
+    return cleanup;
+  }, []);
 
   const navigateToChat = (
     chatId: string,
@@ -39,11 +47,18 @@ export const StarredMessagesScreen: React.FC = () => {
         backgroundColor: theme.colors.cardBg,
         borderColor: theme.colors.border,
       }}
-      onPress={() => navigateToChat(item.chatId, item.chatName, item.id)}
+      onPress={() =>
+        navigation.navigate("Chat", {
+          groupId: item.groupId || item.senderId,
+          groupName: item.groupId ? "Group" : item.senderName,
+          chatType: item.groupId ? "group" : "direct",
+          highlightMessageId: item.messageId,
+        })
+      }
     >
       <View className="flex-row items-center justify-between mb-2">
         <Text className="font-semibold" style={{ color: theme.colors.accent }}>
-          {item.chatName}
+          {item.groupId ? "Group Message" : "Direct Message"}
         </Text>
         <Ionicons name="star" size={16} color={theme.colors.warning} />
       </View>
@@ -56,14 +71,19 @@ export const StarredMessagesScreen: React.FC = () => {
       </Text>
 
       <Text
-        className="text-sm mb-2"
+        className="text-sm mb-2 italic"
         style={{ color: theme.colors.textSecondary }}
       >
-        {item.text}
+        <Ionicons
+          name="lock-closed"
+          size={12}
+          color={theme.colors.textSecondary}
+        />{" "}
+        Encrypted Content
       </Text>
 
       <Text className="text-xs" style={{ color: theme.colors.textSecondary }}>
-        {item.timestamp}
+        {new Date(item.timestamp).toLocaleString()}
       </Text>
     </TouchableOpacity>
   );
@@ -108,7 +128,7 @@ export const StarredMessagesScreen: React.FC = () => {
 
       <FlatList
         data={starredMessages}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.messageId}
         renderItem={renderStarredMessage}
         contentContainerClassName="p-6"
         ListEmptyComponent={

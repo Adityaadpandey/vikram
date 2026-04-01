@@ -12,29 +12,7 @@ interface Mention {
   timestamp: string;
 }
 
-const MOCK_MENTIONS: Mention[] = [
-  {
-    id: "1",
-    message: "@You We need status update on the mission briefing",
-    sender: "Capt. Miller",
-    group: "Alpha Squad",
-    timestamp: "2 hours ago",
-  },
-  {
-    id: "2",
-    message: "@You Great work on yesterday's presentation",
-    sender: "Lt. Johnson",
-    group: "Command Center",
-    timestamp: "Yesterday",
-  },
-  {
-    id: "3",
-    message: "@You Don't forget the meeting at 1400",
-    sender: "Sgt. Thompson",
-    group: "Team Delta",
-    timestamp: "2 days ago",
-  },
-];
+const MOCK_MENTIONS: Mention[] = [];
 
 export const MentionsScreen: React.FC = () => {
   const navigation = useNavigation<any>();

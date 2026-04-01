@@ -86,18 +86,32 @@ export const createWebSocketServer = (server: HttpServer) => {
               await handleLeaveGroup(socket, data);
               break;
 
-            // --- WebRTC signaling stubs ---
+            // --- WebRTC signaling stubs & Call History ---
+            case "get_calls":
+              await handleGetCalls(socket);
+              break;
             case "call_offer":
-              handleCallSignal(socket, data, "call_offer");
+              await handleCallSignal(socket, data, "call_offer");
               break;
             case "call_answer":
-              handleCallSignal(socket, data, "call_answer");
+              await handleCallSignal(socket, data, "call_answer");
               break;
             case "ice_candidate":
-              handleCallSignal(socket, data, "ice_candidate");
+              await handleCallSignal(socket, data, "ice_candidate");
               break;
             case "call_end":
-              handleCallSignal(socket, data, "call_end");
+              await handleCallSignal(socket, data, "call_end");
+              break;
+
+            // --- Starred Messages ---
+            case "star_message":
+              await handleStarMessage(socket, data);
+              break;
+            case "unstar_message":
+              await handleUnstarMessage(socket, data);
+              break;
+            case "get_starred_messages":
+              await handleGetStarredMessages(socket);
               break;
 
             default:
@@ -928,8 +942,8 @@ async function handleLeaveGroup(socket: AuthenticatedSocket, data: any) {
   }
 }
 
-// ==================== WebRTC Signaling Relay ====================
-function handleCallSignal(
+// ==================== WebRTC Signaling Relay & Call DB Tracking ====================
+async function handleCallSignal(
   socket: AuthenticatedSocket,
   data: any,
   eventType: string,
@@ -943,6 +957,178 @@ function handleCallSignal(
       senderId: socket.userId,
       senderArmyId: socket.armyId,
     });
+  }
+
+  try {
+    const callId = data.callId;
+    if (!callId) return;
+
+    if (eventType === "call_offer") {
+      await prisma.call.create({
+        data: {
+          id: callId,
+          callerId: socket.userId,
+          type: data.isVideoCall ? "video" : "voice",
+          status: "ongoing",
+          participants: {
+            create: [
+              { userId: socket.userId, status: "accepted" },
+              { userId: data.recipientId, status: "missed" }, // Default missed until answered
+            ],
+          },
+        },
+      });
+    } else if (eventType === "call_answer") {
+      await prisma.callParticipant.update({
+        where: { callId_userId: { callId: callId, userId: socket.userId } },
+        data: { status: "accepted" },
+      });
+    } else if (eventType === "call_end") {
+      await prisma.call.update({
+        where: { id: callId },
+        data: { status: "completed", endedAt: new Date() },
+      });
+    }
+  } catch (error) {
+    logger.error(`Error logging call signal ${eventType}:`, error);
+  }
+}
+
+// ==================== Call History ====================
+async function handleGetCalls(socket: AuthenticatedSocket) {
+  try {
+    if (!socket.userId) return;
+
+    // Get calls where user is caller OR participant
+    const calls = await prisma.call.findMany({
+      where: {
+        OR: [
+          { callerId: socket.userId },
+          { participants: { some: { userId: socket.userId } } },
+        ],
+      },
+      include: {
+        caller: { select: { id: true, name: true, armyId: true } },
+        participants: {
+          include: { user: { select: { id: true, name: true, armyId: true } } },
+        },
+      },
+      orderBy: { startedAt: "desc" },
+      take: 50,
+    });
+
+    const formattedCalls = calls.map((call) => {
+      const isCaller = call.callerId === socket.userId;
+      const otherParticipant = isCaller
+        ? call.participants.find((p) => p.userId !== socket.userId)
+        : call.participants.find((p) => p.userId === call.callerId);
+
+      const participantInfo = otherParticipant?.user;
+      const pStatus = call.participants.find(
+        (p) => p.userId === socket.userId,
+      )?.status;
+
+      let callTypeDisplay: "incoming" | "outgoing" | "missed" = "outgoing";
+      if (!isCaller) {
+        callTypeDisplay =
+          pStatus === "missed" && call.status !== "ongoing"
+            ? "missed"
+            : "incoming";
+      }
+
+      return {
+        id: call.id,
+        name: participantInfo?.name || participantInfo?.armyId || "Unknown",
+        type: callTypeDisplay,
+        callType: call.type,
+        timestamp: call.startedAt.toISOString(),
+        duration: call.endedAt
+          ? Math.floor(
+              (new Date(call.endedAt).getTime() -
+                new Date(call.startedAt).getTime()) /
+                1000,
+            )
+          : null,
+      };
+    });
+
+    socket.emit("calls_history", { calls: formattedCalls });
+  } catch (error) {
+    logger.error("Error fetching call history:", error);
+    socket.emit("error", { message: "Failed to fetch call history" });
+  }
+}
+
+// ==================== Starred Messages ====================
+async function handleStarMessage(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId || !data.messageId) return;
+
+    await prisma.starredMessage.upsert({
+      where: {
+        userId_messageId: { userId: socket.userId, messageId: data.messageId },
+      },
+      update: {},
+      create: { userId: socket.userId, messageId: data.messageId },
+    });
+
+    socket.emit("message_starred", { messageId: data.messageId });
+  } catch (error) {
+    logger.error("Error starring message:", error);
+    socket.emit("error", { message: "Failed to star message" });
+  }
+}
+
+async function handleUnstarMessage(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId || !data.messageId) return;
+
+    await prisma.starredMessage.delete({
+      where: {
+        userId_messageId: { userId: socket.userId, messageId: data.messageId },
+      },
+    });
+
+    socket.emit("message_unstarred", { messageId: data.messageId });
+  } catch (error) {
+    logger.error("Error unstarring message:", error);
+    socket.emit("error", { message: "Failed to unstar message" });
+  }
+}
+
+async function handleGetStarredMessages(socket: AuthenticatedSocket) {
+  try {
+    if (!socket.userId) return;
+
+    const stars = await prisma.starredMessage.findMany({
+      where: { userId: socket.userId },
+      include: {
+        message: {
+          include: {
+            sender: { select: { name: true, armyId: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const formattedStars = stars.map((s) => ({
+      messageId: s.messageId,
+      senderId: s.message.senderId,
+      senderName:
+        s.message.sender?.name || s.message.sender?.armyId || "Unknown",
+      groupId: s.message.groupId,
+      encryptedContent: s.message.encryptedContent,
+      encryptedKey: s.message.encryptedKey,
+      iv: s.message.iv,
+      timestamp: s.message.timestamp.toISOString(),
+      starredAt: s.createdAt.toISOString(),
+    }));
+
+    socket.emit("starred_messages", { messages: formattedStars });
+  } catch (error) {
+    logger.error("Error fetching starred messages:", error);
+    socket.emit("error", { message: "Failed to fetch starred messages" });
   }
 }
 

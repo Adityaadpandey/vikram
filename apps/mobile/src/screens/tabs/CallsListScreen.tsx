@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { IconButton } from "../../components/common/IconButton";
 import { useTheme } from "../../contexts/ThemeContext";
 import { CallNotificationService } from "../../services/call/CallNotificationService";
+import { WebSocketService } from "../../services/api/WebSocketService";
 
 interface Call {
   id: string;
@@ -21,47 +22,22 @@ interface Call {
   duration?: string;
 }
 
-const MOCK_CALLS: Call[] = [
-  {
-    id: "1",
-    name: "Rahul Sharma",
-    type: "incoming",
-    callType: "video",
-    timestamp: "10:30 AM",
-    duration: "12:45",
-  },
-  {
-    id: "2",
-    name: "Priya Singh",
-    type: "outgoing",
-    callType: "voice",
-    timestamp: "Yesterday",
-    duration: "05:23",
-  },
-  {
-    id: "3",
-    name: "Amit Patel",
-    type: "missed",
-    callType: "voice",
-    timestamp: "2 days ago",
-  },
-  {
-    id: "4",
-    name: "Team Bharat",
-    type: "outgoing",
-    callType: "video",
-    timestamp: "3 days ago",
-    duration: "45:12",
-  },
-];
-
 export const CallsListScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { theme, isDark } = useTheme();
+  const [calls, setCalls] = useState<Call[]>([]);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredCalls = MOCK_CALLS.filter((call) =>
+  useEffect(() => {
+    WebSocketService.getCalls();
+    const cleanup = WebSocketService.onCalls((fetchedCalls: Call[]) => {
+      setCalls(fetchedCalls);
+    });
+    return cleanup;
+  }, []);
+
+  const filteredCalls = calls.filter((call) =>
     call.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 

@@ -18,14 +18,17 @@ model User {
   updatedAt   DateTime @updatedAt
 
   // Relationships
-  keys             Key[]          @relation("UserKeys")
-  Friends          Friend[]       @relation("UserFriends")
-  FriendOf         Friend[]       @relation("FriendOfUser")
-  SentMessages     Message[]      @relation("SentMessages")
-  ReceivedMessages Message[]      @relation("ReceivedMessages")
-  Notifications    Notification[] @relation("UserNotifications")
-  GroupMembers     GroupMember[]   @relation("UserGroupMembers")
-  CreatedGroups    Group[]        @relation("GroupCreator")
+  keys             Key[]             @relation("UserKeys")
+  Friends          Friend[]          @relation("UserFriends")
+  FriendOf         Friend[]          @relation("FriendOfUser")
+  SentMessages     Message[]         @relation("SentMessages")
+  ReceivedMessages Message[]         @relation("ReceivedMessages")
+  Notifications    Notification[]    @relation("UserNotifications")
+  GroupMembers     GroupMember[]     @relation("UserGroupMembers")
+  CreatedGroups    Group[]           @relation("GroupCreator")
+  Calls            Call[]            @relation("Caller")
+  CallParticipants CallParticipant[] @relation("CallParticipants")
+  StarredMessages  StarredMessage[]  @relation("UserStarredMessages")
 
   @@map("users")
 }
@@ -65,15 +68,16 @@ model Message {
   groupId          String?
   encryptedContent String   @db.Text
   encryptedKey     String?  @db.Text
-  encryptedKeys    Json?    // For group messages: { userId: encryptedKey }
+  encryptedKeys    Json? // For group messages: { userId: encryptedKey }
   iv               String
-  status           String   // 'sent', 'delivered', 'read'
+  status           String // 'sent', 'delivered', 'read'
   timestamp        DateTime
   createdAt        DateTime @default(now())
 
-  sender    User  @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  recipient User? @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
-  group     Group? @relation("GroupMessages", fields: [groupId], references: [id], onDelete: Cascade)
+  sender    User             @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User?            @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  group     Group?           @relation("GroupMessages", fields: [groupId], references: [id], onDelete: Cascade)
+  StarredBy StarredMessage[] @relation("MessageStarred")
 
   @@index([senderId])
   @@index([recipientId])
@@ -91,19 +95,19 @@ model Group {
   updatedAt   DateTime @updatedAt
 
   createdBy User          @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  members   GroupMember[]  @relation("GroupMembers")
-  messages  Message[]      @relation("GroupMessages")
+  members   GroupMember[] @relation("GroupMembers")
+  messages  Message[]     @relation("GroupMessages")
 
   @@index([createdById])
   @@map("groups")
 }
 
 model GroupMember {
-  id        String   @id @default(uuid())
-  groupId   String
-  userId    String
-  role      String   @default("member") // 'admin', 'member'
-  joinedAt  DateTime @default(now())
+  id       String   @id @default(uuid())
+  groupId  String
+  userId   String
+  role     String   @default("member") // 'admin', 'member'
+  joinedAt DateTime @default(now())
 
   group Group @relation("GroupMembers", fields: [groupId], references: [id], onDelete: Cascade)
   user  User  @relation("UserGroupMembers", fields: [userId], references: [id], onDelete: Cascade)
@@ -124,4 +128,50 @@ model Notification {
 
   @@index([userId])
   @@map("notifications")
+}
+
+model StarredMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation("UserStarredMessages", fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation("MessageStarred", fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@index([userId])
+  @@index([messageId])
+  @@map("starred_messages")
+}
+
+model Call {
+  id        String    @id @default(uuid())
+  callerId  String
+  type      String // 'voice', 'video'
+  status    String // 'missed', 'completed', 'ongoing'
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  duration  Int? // in seconds
+
+  caller       User              @relation("Caller", fields: [callerId], references: [id], onDelete: Cascade)
+  participants CallParticipant[]
+
+  @@index([callerId])
+  @@map("calls")
+}
+
+model CallParticipant {
+  id     String @id @default(uuid())
+  callId String
+  userId String
+  status String // 'missed', 'accepted', 'declined'
+
+  call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user User @relation("CallParticipants", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([callId, userId])
+  @@index([callId])
+  @@index([userId])
+  @@map("call_participants")
 }

@@ -11,14 +11,14 @@ class ServiceProxy {
     {
       path: "/api/v1/auth/",
       url: config.AUTH_SERVICE_URL,
-      pathRewrite: { "^/": "/api/v1/auth/" },
+      pathRewrite: {},
       name: "auth-service",
       timeout: 5000,
     },
     {
       path: "/api/v1/ws/",
       url: config.WS_SERVICE_URL,
-      pathRewrite: { "^/": "/api/v1/ws/" },
+      pathRewrite: { "^/api/v1/ws/": "/socket.io/" },
       name: "ws-service",
       ws: true,
       timeout: 5000,
@@ -74,15 +74,22 @@ class ServiceProxy {
     logger.debug(`Received response for ${req.url}`);
   }
 
-  public static setupProxy(app: Application): void {
+  public static setupProxy(app: Application): any[] {
+    const wsProxies: any[] = [];
     ServiceProxy.serviceConfigs.forEach((service) => {
       const proxyOptions = ServiceProxy.createProxyOptions(service);
-      app.use(service.path, createProxyMiddleware(proxyOptions));
+      const proxy = createProxyMiddleware(proxyOptions);
+      app.use(service.path, proxy);
       logger.info(`Configured proxy for ${service.name} at ${service.path}`);
+
+      if (service.ws) {
+        wsProxies.push(proxy);
+      }
     });
+    return wsProxies;
   }
 }
 
-export const proxyServices = (app: Application): void => {
-  ServiceProxy.setupProxy(app);
+export const proxyServices = (app: Application) => {
+  return ServiceProxy.setupProxy(app);
 };

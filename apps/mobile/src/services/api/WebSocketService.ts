@@ -46,6 +46,8 @@ class WebSocketServiceClass {
   private groupCallbacks: Array<(event: string, data: any) => void> = [];
   private groupsCallbacks: Array<(groups: any[]) => void> = [];
   private groupMessageCallbacks: Array<(message: any) => void> = [];
+  private callsCallbacks: Array<(calls: any[]) => void> = [];
+  private starredMessagesCallbacks: Array<(messages: any[]) => void> = [];
 
   async connect(): Promise<void> {
     if (this.socket?.connected && this.isAuthenticated) {
@@ -263,6 +265,28 @@ class WebSocketServiceClass {
         );
       },
     );
+
+    // Calls events
+    this.socket.on("calls_history", (data: { calls: any[] }) => {
+      console.log("📞 Received calls history:", data.calls.length);
+      this.callsCallbacks.forEach((callback) => callback(data.calls));
+    });
+
+    // Starred messages events
+    this.socket.on("starred_messages", (data: { messages: any[] }) => {
+      console.log("⭐ Received starred messages:", data.messages.length);
+      this.starredMessagesCallbacks.forEach((callback) =>
+        callback(data.messages),
+      );
+    });
+
+    this.socket.on("message_starred", (data: { messageId: string }) => {
+      this.getStarredMessages();
+    });
+
+    this.socket.on("message_unstarred", (data: { messageId: string }) => {
+      this.getStarredMessages();
+    });
   }
 
   private authenticate(sessionToken: string) {
@@ -469,6 +493,48 @@ class WebSocketServiceClass {
 
   onGroupMessage(callback: (message: any) => void) {
     this.groupMessageCallbacks.push(callback);
+  }
+
+  // Calls
+  getCalls() {
+    if (this.socket?.connected) {
+      this.socket.emit("message", { type: "get_calls" });
+    }
+  }
+
+  onCalls(callback: (calls: any[]) => void) {
+    this.callsCallbacks.push(callback);
+    return () => {
+      this.callsCallbacks = this.callsCallbacks.filter((cb) => cb !== callback);
+    };
+  }
+
+  // Starred Messages
+  getStarredMessages() {
+    if (this.socket?.connected) {
+      this.socket.emit("message", { type: "get_starred_messages" });
+    }
+  }
+
+  onStarredMessages(callback: (messages: any[]) => void) {
+    this.starredMessagesCallbacks.push(callback);
+    return () => {
+      this.starredMessagesCallbacks = this.starredMessagesCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
+  starMessage(messageId: string) {
+    if (this.socket?.connected) {
+      this.socket.emit("message", { type: "star_message", messageId });
+    }
+  }
+
+  unstarMessage(messageId: string) {
+    if (this.socket?.connected) {
+      this.socket.emit("message", { type: "unstar_message", messageId });
+    }
   }
 
   disconnect() {
