@@ -37,5 +37,5 @@ yarn-error.log*
 .DS_Store
 *.pem
 
-
+package-lock.json
 ts_errors.txt

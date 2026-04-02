@@ -1,12 +1,12 @@
 // API Gateway Configuration
 export const API_CONFIG = {
   // API Gateway (all requests go through this)
-  GATEWAY_URL: __DEV__
-    ? "https://192.168.1.3:7123"
-    : "https://your-production-url.com",
-  WS_GATEWAY_URL: __DEV__
-    ? "ws://192.168.1.3:7123"
-    : "wss://your-production-url.com",
+  GATEWAY_URL:
+    process.env.EXPO_PUBLIC_API_GATEWAY_URL ||
+    (__DEV__ ? "http://[IP_ADDRESS]:7123" : "https://your-production-url.com"),
+  WS_GATEWAY_URL:
+    process.env.EXPO_PUBLIC_WS_GATEWAY_URL ||
+    (__DEV__ ? "ws://[IP_ADDRESS]:7123" : "wss://your-production-url.com"),
 
   TIMEOUT: 30000,
 };

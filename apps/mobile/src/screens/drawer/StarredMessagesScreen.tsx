@@ -24,22 +24,6 @@ export const StarredMessagesScreen: React.FC = () => {
     return cleanup;
   }, []);
 
-  const navigateToChat = (
-    chatId: string,
-    chatName: string,
-    messageId: string,
-  ) => {
-    navigation.navigate("Chat", {
-      groupId: chatId,
-      groupName: chatName,
-      chatType:
-        chatName.includes("Squad") || chatName.includes("Group")
-          ? "group"
-          : "direct",
-      highlightMessageId: messageId, // Pass message ID to highlight
-    });
-  };
-
   const renderStarredMessage = ({ item }: any) => (
     <TouchableOpacity
       className="p-4 mb-3 rounded-lg border"
