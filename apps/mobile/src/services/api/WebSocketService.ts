@@ -124,12 +124,24 @@ class WebSocketServiceClass {
         reject(error);
       });
 
-      // Handle auth errors
+      // Handle general errors
       this.socket.once("error", (data: { message: string }) => {
         console.error("❌ WebSocket error:", data.message);
         if (!this.isAuthenticated) {
           clearTimeout(timeout);
           this.authPromise = null;
+          reject(new Error(data.message));
+        }
+      });
+
+      // Handle specific auth errors sent by the server
+      this.socket.once("auth_error", (data: { message: string }) => {
+        console.error("❌ WebSocket auth_error:", data.message);
+        if (!this.isAuthenticated) {
+          clearTimeout(timeout);
+          this.authPromise = null;
+          // Clear invalid session tokens so the app can log out
+          SecureStorage.clearAll().catch(console.error);
           reject(new Error(data.message));
         }
       });
