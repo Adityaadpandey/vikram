@@ -39,3 +39,4 @@ yarn-error.log*
 
 package-lock.json
 ts_errors.txt
+auth_log.txt

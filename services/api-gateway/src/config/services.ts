@@ -9,9 +9,11 @@ import logger from "./logger";
 class ServiceProxy {
   private static readonly serviceConfigs: ServiceConfig[] = [
     {
-      path: "/api/v1/auth/",
+      path: "/api/v1/auth",
       url: config.AUTH_SERVICE_URL,
-      pathRewrite: {},
+      pathRewrite: {
+        "^/api/v1/auth": "/api/v1/auth",
+      },
       name: "auth-service",
       timeout: 5000,
     },

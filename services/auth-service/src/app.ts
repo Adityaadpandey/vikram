@@ -16,8 +16,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use("/api/v1/auth", authRouter);
-app.get("/api/v1/auth/health", (req: Request, res: Response) => {
+app.use("/", authRouter);
+app.get("/health", (req: Request, res: Response) => {
   res.status(200).json({ status: "ok" });
 });
 
