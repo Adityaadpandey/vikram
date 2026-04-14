@@ -15,7 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { SecureStorage } from "../services/security/SecureStorage";
 import { useTheme } from "../contexts/ThemeContext";
 import { useUser } from "../contexts/UserContext";
-import { useNavigation } from "@react-navigation/native";
+import { CommonActions, useNavigation } from "@react-navigation/native";
 
 interface DrawerItem {
   label: string;
@@ -27,7 +27,7 @@ export const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (
   props,
 ) => {
   const { theme, isDark } = useTheme();
-  const { profile } = useUser();
+  const { profile, loadProfile } = useUser();
   const navigation = useNavigation<any>();
 
   const drawerItems: DrawerItem[] = [
@@ -61,6 +61,7 @@ export const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (
               const AsyncStorage =
                 require("@react-native-async-storage/async-storage").default;
               await AsyncStorage.clear();
+              await loadProfile();
 
               Alert.alert(
                 "Logged Out",
@@ -69,12 +70,18 @@ export const CustomDrawerContent: React.FC<DrawerContentComponentProps> = (
                   {
                     text: "OK",
                     onPress: () => {
-                      // Navigation will automatically redirect to login
-                      // because authentication state is cleared
-                      navigation.reset({
-                        index: 0,
-                        routes: [{ name: "Login" }],
-                      });
+                      const parentNav = props.navigation.getParent();
+
+                      if (parentNav) {
+                        parentNav.dispatch(
+                          CommonActions.reset({
+                            index: 0,
+                            routes: [{ name: "Login" }],
+                          }),
+                        );
+                      } else {
+                        navigation.navigate("Login");
+                      }
                     },
                   },
                 ],

@@ -42,50 +42,31 @@ export const AppNavigator: React.FC = () => {
 
   return (
     <Stack.Navigator
+      initialRouteName={isAuthenticated ? "Main" : "Login"}
       screenOptions={{
         headerShown: false,
         animation: "slide_from_right",
       }}
     >
-      {!isAuthenticated ? (
-        // Auth Stack
-        <>
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
-          <Stack.Screen
-            name="OTPVerification"
-            component={OTPVerificationScreen}
-          />
-          <Stack.Screen name="SeedPhrase" options={{ gestureEnabled: false }}>
-            {(props) =>
-              React.createElement(SeedPhraseScreen as any, {
-                ...props,
-                onSuccess: () => setIsAuthenticated(true),
-              })
-            }
-          </Stack.Screen>
-          <Stack.Screen name="Main" component={DrawerNavigator} />
-          <Stack.Screen name="Chat" component={ChatScreen} />
-          <Stack.Screen name="Call" component={VoiceVideoCallScreen} />
-          <Stack.Screen name="FileViewer" component={FileViewerScreen} />
-          <Stack.Screen name="Contacts" component={ContactsScreen} />
-          <Stack.Screen name="SelectContact" component={SelectContactScreen} />
-          <Stack.Screen name="AddContact" component={AddContactScreen} />
-          <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
-        </>
-      ) : (
-        // Main App Stack
-        <>
-          <Stack.Screen name="Main" component={DrawerNavigator} />
-          <Stack.Screen name="Chat" component={ChatScreen} />
-          <Stack.Screen name="Call" component={VoiceVideoCallScreen} />
-          <Stack.Screen name="FileViewer" component={FileViewerScreen} />
-          <Stack.Screen name="Contacts" component={ContactsScreen} />
-          <Stack.Screen name="SelectContact" component={SelectContactScreen} />
-          <Stack.Screen name="AddContact" component={AddContactScreen} />
-          <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
-        </>
-      )}
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Register" component={RegisterScreen} />
+      <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
+      <Stack.Screen name="SeedPhrase" options={{ gestureEnabled: false }}>
+        {(props) =>
+          React.createElement(SeedPhraseScreen as any, {
+            ...props,
+            onSuccess: () => setIsAuthenticated(true),
+          })
+        }
+      </Stack.Screen>
+      <Stack.Screen name="Main" component={DrawerNavigator} />
+      <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen name="Call" component={VoiceVideoCallScreen} />
+      <Stack.Screen name="FileViewer" component={FileViewerScreen} />
+      <Stack.Screen name="Contacts" component={ContactsScreen} />
+      <Stack.Screen name="SelectContact" component={SelectContactScreen} />
+      <Stack.Screen name="AddContact" component={AddContactScreen} />
+      <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
     </Stack.Navigator>
   );
 };

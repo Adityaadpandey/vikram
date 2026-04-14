@@ -1,9 +1,4 @@
-import { PrismaClient } from "@repo/database";
-
-const prisma = new PrismaClient({
-  log: ["error", "warn"], // Reduce logging
-  errorFormat: "minimal",
-});
+import { prisma } from "@repo/database";
 
 // Test connection
 prisma

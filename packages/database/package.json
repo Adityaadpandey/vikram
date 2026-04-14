@@ -13,6 +13,8 @@
 		"db:migrate:deploy": "prisma migrate deploy",
 		"db:migrate:dev": "prisma migrate dev",
 		"db:push": "prisma db push",
+		"db:seed": "tsx seed.ts",
+		"predb:seed": "prisma generate",
 		"format": "prisma format",
 		"generate": "prisma generate",
 		"lint": "eslint . --max-warnings 0",
@@ -26,13 +28,14 @@
 		"postinstall": "npm run generate"
 	},
 	"dependencies": {
-		"@prisma/client": "latest"
+		"@prisma/adapter-pg": "latest",
+		"@prisma/client": "latest",
+		"pg": "^8.11.3"
 	},
 	"devDependencies": {
-		"@repo/typescript-config": "../config-typescript",
+		"@types/node": "^22.13.13",
 		"eslint": "^8.57.0",
 		"prisma": "latest",
-		"@types/node": "^22.13.13",
 		"tsx": "4.19.1",
 		"typescript": "5.5.4"
 	}

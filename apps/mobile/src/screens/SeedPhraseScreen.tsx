@@ -32,9 +32,11 @@ export const SeedPhraseScreen: React.FC = () => {
 
     try {
       // Store initial data
-      await SecureStorage.setItem("userId", userId);
-      await SecureStorage.setItem("publicKey", publicKey);
-      await SecureStorage.setItem("seedPhrase", seedPhrase);
+      await Promise.all([
+        SecureStorage.setUserId(userId),
+        SecureStorage.setPublicKey(publicKey),
+        SecureStorage.setSeedPhrase(seedPhrase),
+      ]);
 
       Alert.alert(
         "Account Created",

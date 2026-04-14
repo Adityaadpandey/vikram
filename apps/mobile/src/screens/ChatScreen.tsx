@@ -12,6 +12,7 @@ import {
   Image,
   Dimensions,
   KeyboardAvoidingView,
+  Keyboard,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -66,6 +67,8 @@ export const ChatScreen: React.FC = () => {
     [userId: string]: string;
   }>({});
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
 
   useEffect(() => {
     requestPermissions();
@@ -90,12 +93,137 @@ export const ChatScreen: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardOffset(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardOffset(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const formatFallbackMessage = (encryptedContent?: string) => {
+    if (!encryptedContent) return "Encrypted message";
+    const isLikelyHex = /^[0-9a-fA-F]{32,}$/.test(encryptedContent);
+    if (isLikelyHex) return "Encrypted message";
+    return encryptedContent.slice(0, 120);
+  };
+
+  const handleDirectHistory = async (historyData: any) => {
+    if (chatType !== "direct" || historyData?.recipientId !== groupId) return;
+
+    const privateKey = await SecureStorage.getPrivateKey();
+    const userId = currentUserId || (await SecureStorage.getUserId()) || "";
+
+    const mappedMessages: Message[] = await Promise.all(
+      (historyData.messages || []).map(async (msg: any) => {
+        let text = "Encrypted message";
+
+        if (msg.senderId !== userId && privateKey && msg.encryptedKey) {
+          try {
+            text = await EncryptionService.decryptMessage(
+              msg.encryptedContent,
+              msg.encryptedKey,
+              msg.iv,
+              privateKey,
+            );
+          } catch {
+            text = formatFallbackMessage(msg.encryptedContent);
+          }
+        } else {
+          text = formatFallbackMessage(msg.encryptedContent);
+        }
+
+        return {
+          id: msg.messageId,
+          senderId: msg.senderId,
+          senderName: msg.senderId === userId ? "You" : msg.senderName,
+          text,
+          timestamp: new Date(msg.timestamp).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+          type: "text",
+        };
+      }),
+    );
+
+    setMessages(mappedMessages);
+  };
+
+  const handleGroupHistory = async (historyData: any) => {
+    if (chatType !== "group" || historyData?.groupId !== groupId) return;
+
+    const privateKey = await SecureStorage.getPrivateKey();
+    const userId = currentUserId || (await SecureStorage.getUserId()) || "";
+
+    const mappedMessages: Message[] = await Promise.all(
+      (historyData.messages || []).map(async (msg: any) => {
+        let text = "Encrypted message";
+        const encryptedKeys = msg.encryptedKeys || {};
+        const encryptedKey = encryptedKeys[userId];
+
+        if (encryptedKey && privateKey) {
+          try {
+            text = await EncryptionService.decryptMessage(
+              msg.encryptedContent,
+              encryptedKey,
+              msg.iv,
+              privateKey,
+            );
+          } catch {
+            text = formatFallbackMessage(msg.encryptedContent);
+          }
+        } else {
+          text = formatFallbackMessage(msg.encryptedContent);
+        }
+
+        return {
+          id: msg.messageId,
+          senderId: msg.senderId,
+          senderName: msg.senderId === userId ? "You" : msg.senderName,
+          text,
+          timestamp: new Date(msg.timestamp).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+          type: "text",
+        };
+      }),
+    );
+
+    setMessages(mappedMessages);
+  };
+
   const initializeWebSocket = async () => {
     try {
       if (!WebSocketService.isConnected()) {
         await WebSocketService.connect();
         WebSocketService.startHeartbeat();
       }
+
+      const userId = await SecureStorage.getUserId();
+      if (userId) {
+        setCurrentUserId(userId);
+      }
+
+      WebSocketService.onDirectHistory((data) => {
+        void handleDirectHistory(data);
+      });
+
+      WebSocketService.onGroupHistory((data) => {
+        void handleGroupHistory(data);
+      });
 
       if (chatType === "group") {
         // Group chat
@@ -113,6 +241,8 @@ export const ChatScreen: React.FC = () => {
           });
           setRecipientPublicKeys(keysMap);
         }
+
+        await WebSocketService.getGroupHistory(groupId);
       } else {
         // Direct chat
         WebSocketService.onMessage(handleIncomingMessage);
@@ -126,6 +256,8 @@ export const ChatScreen: React.FC = () => {
         } else {
           WebSocketService.requestPublicKey(groupId);
         }
+
+        await WebSocketService.getDirectHistory(groupId);
       }
     } catch (error) {
       console.error("Failed to initialize WebSocket:", error);
@@ -266,24 +398,6 @@ export const ChatScreen: React.FC = () => {
       ],
     );
   };
-
-  useEffect(() => {
-    requestPermissions();
-
-    // Scroll to highlighted message
-    if (highlightMessageId) {
-      setTimeout(() => {
-        const index = messages.findIndex((m) => m.id === highlightMessageId);
-        if (index !== -1) {
-          flatListRef.current?.scrollToIndex({
-            index,
-            animated: true,
-            viewPosition: 0.5,
-          });
-        }
-      }, 500);
-    }
-  }, []);
 
   const requestPermissions = async () => {
     await Audio.requestPermissionsAsync();
@@ -848,10 +962,8 @@ export const ChatScreen: React.FC = () => {
   };
 
   return (
-    <KeyboardAvoidingView
+    <View
       className="flex-1"
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       style={{ backgroundColor: theme.colors.primaryBg }}
     >
       {/* Header */}
@@ -934,6 +1046,7 @@ export const ChatScreen: React.FC = () => {
       {/* Messages */}
       <FlatList
         ref={flatListRef}
+        style={{ flex: 1 }}
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
@@ -943,98 +1056,104 @@ export const ChatScreen: React.FC = () => {
       />
 
       {/* Input Bar */}
-      <View
-        style={{
-          paddingBottom: Platform.OS === "ios" ? 20 : 10,
-          backgroundColor: theme.colors.secondaryBg,
-          borderTopWidth: 1,
-          borderTopColor: theme.colors.border,
-        }}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
-        <View className="px-4 py-3">
-          <View className="flex-row items-end">
-            <TouchableOpacity
-              className="mr-2"
-              onPress={() => setShowAttachmentMenu(true)}
-            >
-              <Ionicons
-                name="add-circle"
-                size={28}
-                color={theme.colors.accent}
-              />
-            </TouchableOpacity>
+        <View
+          style={{
+            paddingBottom: Platform.OS === "ios" ? 20 : 10,
+            backgroundColor: theme.colors.secondaryBg,
+            borderTopWidth: 1,
+            borderTopColor: theme.colors.border,
+            marginBottom: Platform.OS === "android" ? keyboardOffset : 0,
+          }}
+        >
+          <View className="px-4 py-3">
+            <View className="flex-row items-end">
+              <TouchableOpacity
+                className="mr-2"
+                onPress={() => setShowAttachmentMenu(true)}
+              >
+                <Ionicons
+                  name="add-circle"
+                  size={28}
+                  color={theme.colors.accent}
+                />
+              </TouchableOpacity>
 
-            <View className="flex-1">
-              <TextInput
-                ref={inputRef}
-                className="px-4 py-3 rounded-full"
-                style={{
-                  backgroundColor: theme.colors.cardBg,
-                  color: theme.colors.textPrimary,
-                  maxHeight: 100,
-                }}
-                placeholder="Type a message..."
-                placeholderTextColor={theme.colors.textSecondary}
-                value={message}
-                onChangeText={setMessage}
-                multiline
-                onFocus={scrollToBottom}
-                contextMenuHidden={true}
-                selectTextOnFocus={false}
-              />
+              <View className="flex-1">
+                <TextInput
+                  ref={inputRef}
+                  className="px-4 py-3 rounded-full"
+                  style={{
+                    backgroundColor: theme.colors.cardBg,
+                    color: theme.colors.textPrimary,
+                    maxHeight: 100,
+                  }}
+                  placeholder="Type a message..."
+                  placeholderTextColor={theme.colors.textSecondary}
+                  value={message}
+                  onChangeText={setMessage}
+                  multiline
+                  onFocus={scrollToBottom}
+                  contextMenuHidden={true}
+                  selectTextOnFocus={false}
+                />
+              </View>
+
+              {message.trim() ? (
+                <TouchableOpacity className="ml-2" onPress={handleSend}>
+                  <View
+                    className="w-10 h-10 rounded-full items-center justify-center"
+                    style={{ backgroundColor: theme.colors.accent }}
+                  >
+                    <Ionicons name="send" size={18} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  className="ml-2"
+                  onLongPress={startRecording}
+                  onPressOut={stopRecording}
+                >
+                  <Animated.View
+                    className="w-10 h-10 rounded-full items-center justify-center"
+                    style={{
+                      backgroundColor: isRecording
+                        ? theme.colors.error
+                        : "transparent",
+                      transform: [{ scale: recordingAnimation }],
+                    }}
+                  >
+                    <Ionicons
+                      name={isRecording ? "stop-circle" : "mic"}
+                      size={28}
+                      color={isRecording ? "#FFFFFF" : theme.colors.accent}
+                    />
+                  </Animated.View>
+                </TouchableOpacity>
+              )}
             </View>
 
-            {message.trim() ? (
-              <TouchableOpacity className="ml-2" onPress={handleSend}>
+            {isRecording && (
+              <View className="mt-2 flex-row items-center justify-center">
                 <View
-                  className="w-10 h-10 rounded-full items-center justify-center"
-                  style={{ backgroundColor: theme.colors.accent }}
+                  className="w-2 h-2 rounded-full mr-2"
+                  style={{ backgroundColor: theme.colors.error }}
+                />
+                <Text
+                  className="text-sm"
+                  style={{ color: theme.colors.error }}
+                  selectable={false}
                 >
-                  <Ionicons name="send" size={18} color="#FFFFFF" />
-                </View>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                className="ml-2"
-                onLongPress={startRecording}
-                onPressOut={stopRecording}
-              >
-                <Animated.View
-                  className="w-10 h-10 rounded-full items-center justify-center"
-                  style={{
-                    backgroundColor: isRecording
-                      ? theme.colors.error
-                      : "transparent",
-                    transform: [{ scale: recordingAnimation }],
-                  }}
-                >
-                  <Ionicons
-                    name={isRecording ? "stop-circle" : "mic"}
-                    size={28}
-                    color={isRecording ? "#FFFFFF" : theme.colors.accent}
-                  />
-                </Animated.View>
-              </TouchableOpacity>
+                  Recording... (Release to send)
+                </Text>
+              </View>
             )}
           </View>
-
-          {isRecording && (
-            <View className="mt-2 flex-row items-center justify-center">
-              <View
-                className="w-2 h-2 rounded-full mr-2"
-                style={{ backgroundColor: theme.colors.error }}
-              />
-              <Text
-                className="text-sm"
-                style={{ color: theme.colors.error }}
-                selectable={false}
-              >
-                Recording... (Release to send)
-              </Text>
-            </View>
-          )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
 
       {/* Attachment Menu Modal */}
       <Modal
@@ -1369,6 +1488,6 @@ export const ChatScreen: React.FC = () => {
           </View>
         </TouchableOpacity>
       </Modal>
-    </KeyboardAvoidingView>
+    </View>
   );
 };

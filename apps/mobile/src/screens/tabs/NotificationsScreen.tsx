@@ -23,36 +23,69 @@ export const NotificationsScreen: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  useEffect(() => {
-    // System update notification (always present)
-    setNotifications([
-      {
-        id: "update1",
-        type: "update",
-        title: "System Update",
-        message: "New security features are now available",
-        timestamp: "1 day ago",
-      },
-    ]);
+  const formatRelativeTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return "Just now";
 
-    // Listen for friend request events from WebSocket
-    if (WebSocketService.isConnected()) {
-      WebSocketService.onGroup((event, data) => {
-        if (event === "created") {
-          setNotifications((prev) => [
-            {
-              id: `grp_${Date.now()}`,
-              type: "update",
-              title: "New Group",
-              message: `You were added to "${data.groupName}"`,
-              timestamp: "Just now",
-              data,
-            },
-            ...prev,
-          ]);
-        }
-      });
-    }
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.floor(diffMs / (1000 * 60));
+    const diffHr = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHr / 24);
+
+    if (diffMin < 1) return "Just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return `${diffDay}d ago`;
+  };
+
+  useEffect(() => {
+    const initNotifications = async () => {
+      try {
+        await WebSocketService.connect();
+        WebSocketService.startHeartbeat();
+        await WebSocketService.getNotifications();
+      } catch (error) {
+        console.error("Failed to load notifications:", error);
+      }
+    };
+
+    void initNotifications();
+
+    const offNotifications = WebSocketService.onNotifications(
+      (items: any[]) => {
+        const mapped: Notification[] = items.map((item) => ({
+          id: item.id,
+          type: item.type || "update",
+          title: item.title || "Notification",
+          message: item.message,
+          timestamp: formatRelativeTime(item.timestamp),
+          data: item.data,
+        }));
+
+        setNotifications(mapped);
+      },
+    );
+
+    const offGroup = WebSocketService.onGroup((event, data) => {
+      if (event === "created") {
+        setNotifications((prev) => [
+          {
+            id: `grp_${Date.now()}`,
+            type: "update",
+            title: "New Group",
+            message: `You were added to "${data.groupName}"`,
+            timestamp: "Just now",
+            data,
+          },
+          ...prev,
+        ]);
+      }
+    });
+
+    return () => {
+      offNotifications?.();
+      offGroup?.();
+    };
   }, []);
 
   const filteredNotifications = notifications.filter((notification) => {

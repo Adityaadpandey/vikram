@@ -1,4 +1,5 @@
 import * as Crypto from "expo-crypto";
+import CryptoJS from "crypto-js";
 import { RSA } from "react-native-rsa-native";
 
 export class EncryptionService {
@@ -66,30 +67,16 @@ export class EncryptionService {
     key: string,
     iv: string,
   ): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(plaintext);
+    const keyWordArray = CryptoJS.enc.Hex.parse(key);
+    const ivWordArray = CryptoJS.enc.Hex.parse(iv);
 
-    // Convert hex strings to Uint8Array
-    const keyBytes = this.hexToBuffer(key);
-    const ivBytes = this.hexToBuffer(iv);
+    const encrypted = CryptoJS.AES.encrypt(plaintext, keyWordArray, {
+      iv: ivWordArray,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7,
+    });
 
-    // Import key
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw",
-      keyBytes.buffer as ArrayBuffer,
-      { name: "AES-CBC" },
-      false,
-      ["encrypt"],
-    );
-
-    // Encrypt
-    const encrypted = await crypto.subtle.encrypt(
-      { name: "AES-CBC", iv: ivBytes.buffer as ArrayBuffer },
-      cryptoKey,
-      data.buffer as ArrayBuffer,
-    );
-
-    return this.bufferToHex(new Uint8Array(encrypted));
+    return encrypted.ciphertext.toString(CryptoJS.enc.Hex);
   }
 
   // AES decryption helper
@@ -98,29 +85,19 @@ export class EncryptionService {
     key: string,
     iv: string,
   ): Promise<string> {
-    // Convert hex strings to Uint8Array
-    const keyBytes = this.hexToBuffer(key);
-    const ivBytes = this.hexToBuffer(iv);
-    const ciphertextBytes = this.hexToBuffer(ciphertext);
+    const keyWordArray = CryptoJS.enc.Hex.parse(key);
+    const ivWordArray = CryptoJS.enc.Hex.parse(iv);
+    const cipherParams = CryptoJS.lib.CipherParams.create({
+      ciphertext: CryptoJS.enc.Hex.parse(ciphertext),
+    });
 
-    // Import key
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw",
-      keyBytes.buffer as ArrayBuffer,
-      { name: "AES-CBC" },
-      false,
-      ["decrypt"],
-    );
+    const decrypted = CryptoJS.AES.decrypt(cipherParams, keyWordArray, {
+      iv: ivWordArray,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7,
+    });
 
-    // Decrypt
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-CBC", iv: ivBytes.buffer as ArrayBuffer },
-      cryptoKey,
-      ciphertextBytes.buffer as ArrayBuffer,
-    );
-
-    const decoder = new TextDecoder();
-    return decoder.decode(decrypted);
+    return decrypted.toString(CryptoJS.enc.Utf8);
   }
 
   // Helper: Convert Uint8Array to hex string

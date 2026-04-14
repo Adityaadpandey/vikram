@@ -17,7 +17,18 @@ export const StarredMessagesScreen: React.FC = () => {
   const [starredMessages, setStarredMessages] = useState<any[]>([]);
 
   useEffect(() => {
-    WebSocketService.getStarredMessages();
+    const initStarred = async () => {
+      try {
+        await WebSocketService.connect();
+        WebSocketService.startHeartbeat();
+        await WebSocketService.getStarredMessages();
+      } catch (error) {
+        console.error("Failed to load starred messages:", error);
+      }
+    };
+
+    void initStarred();
+
     const cleanup = WebSocketService.onStarredMessages((messages) => {
       setStarredMessages(messages);
     });

@@ -28,6 +28,8 @@ interface Contact {
   designation: string;
   publicKey: string;
   status: "online" | "offline";
+  lastMessage?: string;
+  lastMessageTime?: string;
 }
 
 type MessageCallback = (message: IncomingMessage) => void;
@@ -47,6 +49,12 @@ class WebSocketServiceClass {
   private groupsCallbacks: Array<(groups: any[]) => void> = [];
   private groupMessageCallbacks: Array<(message: any) => void> = [];
   private callsCallbacks: Array<(calls: any[]) => void> = [];
+  private badgeCountsCallbacks: Array<
+    (counts: { chats: number; notifications: number }) => void
+  > = [];
+  private notificationsCallbacks: Array<(notifications: any[]) => void> = [];
+  private directHistoryCallbacks: Array<(data: any) => void> = [];
+  private groupHistoryCallbacks: Array<(data: any) => void> = [];
   private starredMessagesCallbacks: Array<(messages: any[]) => void> = [];
 
   async connect(): Promise<void> {
@@ -284,6 +292,30 @@ class WebSocketServiceClass {
       this.callsCallbacks.forEach((callback) => callback(data.calls));
     });
 
+    this.socket.on(
+      "badge_counts",
+      (data: { chats: number; notifications: number }) => {
+        this.badgeCountsCallbacks.forEach((callback) => callback(data));
+      },
+    );
+
+    this.socket.on("notifications_list", (data: { notifications: any[] }) => {
+      console.log("🔔 Received notifications:", data.notifications.length);
+      this.notificationsCallbacks.forEach((callback) =>
+        callback(data.notifications),
+      );
+    });
+
+    this.socket.on("direct_history", (data: any) => {
+      console.log("📜 Received direct history:", data.messages?.length || 0);
+      this.directHistoryCallbacks.forEach((callback) => callback(data));
+    });
+
+    this.socket.on("group_history", (data: any) => {
+      console.log("📜 Received group history:", data.messages?.length || 0);
+      this.groupHistoryCallbacks.forEach((callback) => callback(data));
+    });
+
     // Starred messages events
     this.socket.on("starred_messages", (data: { messages: any[] }) => {
       console.log("⭐ Received starred messages:", data.messages.length);
@@ -293,11 +325,11 @@ class WebSocketServiceClass {
     });
 
     this.socket.on("message_starred", (data: { messageId: string }) => {
-      this.getStarredMessages();
+      void this.getStarredMessages();
     });
 
     this.socket.on("message_unstarred", (data: { messageId: string }) => {
-      this.getStarredMessages();
+      void this.getStarredMessages();
     });
   }
 
@@ -481,37 +513,93 @@ class WebSocketServiceClass {
   // Event listeners
   onMessage(callback: MessageCallback) {
     this.messageCallbacks.push(callback);
+    return () => {
+      this.messageCallbacks = this.messageCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
   }
 
   onContacts(callback: ContactsCallback) {
     this.contactsCallbacks.push(callback);
+    return () => {
+      this.contactsCallbacks = this.contactsCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
   }
 
   onStatusUpdate(callback: StatusCallback) {
     this.statusCallbacks.push(callback);
+    return () => {
+      this.statusCallbacks = this.statusCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
   }
 
   onError(callback: ErrorCallback) {
     this.errorCallbacks.push(callback);
+    return () => {
+      this.errorCallbacks = this.errorCallbacks.filter((cb) => cb !== callback);
+    };
   }
 
   onGroup(callback: (event: string, data: any) => void) {
     this.groupCallbacks.push(callback);
+    return () => {
+      this.groupCallbacks = this.groupCallbacks.filter((cb) => cb !== callback);
+    };
   }
 
   onGroups(callback: (groups: any[]) => void) {
     this.groupsCallbacks.push(callback);
+    return () => {
+      this.groupsCallbacks = this.groupsCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
   }
 
   onGroupMessage(callback: (message: any) => void) {
     this.groupMessageCallbacks.push(callback);
+    return () => {
+      this.groupMessageCallbacks = this.groupMessageCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
   }
 
   // Calls
-  getCalls() {
-    if (this.socket?.connected) {
-      this.socket.emit("message", { type: "get_calls" });
-    }
+  async getCalls() {
+    await this.ensureConnected();
+    this.socket!.emit("message", { type: "get_calls" });
+  }
+
+  async getBadgeCounts() {
+    await this.ensureConnected();
+    this.socket!.emit("message", { type: "get_badges" });
+  }
+
+  async getNotifications() {
+    await this.ensureConnected();
+    this.socket!.emit("message", { type: "get_notifications" });
+  }
+
+  async getDirectHistory(recipientId: string) {
+    await this.ensureConnected();
+    this.socket!.emit("message", {
+      type: "get_direct_history",
+      recipientId,
+    });
+  }
+
+  async getGroupHistory(groupId: string) {
+    await this.ensureConnected();
+    this.socket!.emit("message", {
+      type: "get_group_history",
+      groupId,
+    });
   }
 
   onCalls(callback: (calls: any[]) => void) {
@@ -521,11 +609,48 @@ class WebSocketServiceClass {
     };
   }
 
+  onBadgeCounts(
+    callback: (counts: { chats: number; notifications: number }) => void,
+  ) {
+    this.badgeCountsCallbacks.push(callback);
+    return () => {
+      this.badgeCountsCallbacks = this.badgeCountsCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
+  onNotifications(callback: (notifications: any[]) => void) {
+    this.notificationsCallbacks.push(callback);
+    return () => {
+      this.notificationsCallbacks = this.notificationsCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
+  onDirectHistory(callback: (data: any) => void) {
+    this.directHistoryCallbacks.push(callback);
+    return () => {
+      this.directHistoryCallbacks = this.directHistoryCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
+  onGroupHistory(callback: (data: any) => void) {
+    this.groupHistoryCallbacks.push(callback);
+    return () => {
+      this.groupHistoryCallbacks = this.groupHistoryCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
   // Starred Messages
-  getStarredMessages() {
-    if (this.socket?.connected) {
-      this.socket.emit("message", { type: "get_starred_messages" });
-    }
+  async getStarredMessages() {
+    await this.ensureConnected();
+    this.socket!.emit("message", { type: "get_starred_messages" });
   }
 
   onStarredMessages(callback: (messages: any[]) => void) {

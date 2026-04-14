@@ -40,11 +40,21 @@ export const ChatsListScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const formatChatTime = (value?: string) => {
+    if (!value) return "";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
   useEffect(() => {
     loadChats();
 
     // Listen for new messages
-    WebSocketService.onMessage((message: any) => {
+    const offMessage = WebSocketService.onMessage((message: any) => {
       updateChatWithNewMessage(
         message.senderId,
         message.text,
@@ -52,13 +62,59 @@ export const ChatsListScreen: React.FC = () => {
       );
     });
 
-    WebSocketService.onGroupMessage((message: any) => {
+    const offGroupMessage = WebSocketService.onGroupMessage((message: any) => {
       updateChatWithNewMessage(
         message.groupId,
         message.text,
         message.timestamp,
       );
     });
+
+    const offGroups = WebSocketService.onGroups((groups) => {
+      const groupChats: Chat[] = groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        type: "group",
+        lastMessage: group.lastMessage || "No messages yet",
+        timestamp: formatChatTime(group.lastMessageTime) || "",
+        unread: 0,
+        members: group.members,
+      }));
+
+      setChats((prev) => [
+        ...prev.filter((c) => c.type !== "group"),
+        ...groupChats,
+      ]);
+      setIsLoading(false);
+      setRefreshing(false);
+    });
+
+    const offContacts = WebSocketService.onContacts((contacts) => {
+      const directChats: Chat[] = contacts.map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        type: "direct",
+        lastMessage: contact.lastMessage || "",
+        timestamp: formatChatTime(contact.lastMessageTime) || "",
+        unread: 0,
+        recipientId: contact.id,
+        recipientPublicKey: contact.publicKey,
+      }));
+
+      setChats((prev) => [
+        ...prev.filter((c) => c.type !== "direct"),
+        ...directChats,
+      ]);
+      setIsLoading(false);
+      setRefreshing(false);
+    });
+
+    return () => {
+      offMessage?.();
+      offGroupMessage?.();
+      offGroups?.();
+      offContacts?.();
+    };
   }, []);
 
   const loadChats = async () => {
@@ -120,46 +176,6 @@ export const ChatsListScreen: React.FC = () => {
       setRefreshing(false);
     }
   };
-
-  // Update the callbacks to stop loading
-  WebSocketService.onGroups((groups) => {
-    const groupChats: Chat[] = groups.map((group) => ({
-      id: group.id,
-      name: group.name,
-      type: "group",
-      lastMessage: group.lastMessage || "No messages yet",
-      timestamp: group.lastMessageTime || "Just now",
-      unread: 0,
-      members: group.members,
-    }));
-
-    setChats((prev) => [
-      ...prev.filter((c) => c.type !== "group"),
-      ...groupChats,
-    ]);
-    setIsLoading(false);
-    setRefreshing(false);
-  });
-
-  WebSocketService.onContacts((contacts) => {
-    const directChats: Chat[] = contacts.map((contact) => ({
-      id: contact.id,
-      name: contact.name,
-      type: "direct",
-      lastMessage: "",
-      timestamp: "",
-      unread: 0,
-      recipientId: contact.id,
-      recipientPublicKey: contact.publicKey,
-    }));
-
-    setChats((prev) => [
-      ...prev.filter((c) => c.type !== "direct"),
-      ...directChats,
-    ]);
-    setIsLoading(false);
-    setRefreshing(false);
-  });
 
   const updateChatWithNewMessage = (
     chatId: string,

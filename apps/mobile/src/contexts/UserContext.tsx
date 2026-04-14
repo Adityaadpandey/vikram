@@ -65,10 +65,13 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({
           phone: phone || "",
           profileImage: null,
         });
+      } else {
+        setProfile(emptyProfile);
       }
       setIsLoaded(true);
     } catch (error) {
       console.error("Failed to load profile from SecureStorage:", error);
+      setProfile(emptyProfile);
       setIsLoaded(true);
     }
   };

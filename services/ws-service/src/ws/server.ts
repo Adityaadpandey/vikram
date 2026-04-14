@@ -56,11 +56,23 @@ export const createWebSocketServer = (server: HttpServer) => {
             case "get_contacts":
               await handleGetContacts(socket);
               break;
+            case "get_notifications":
+              await handleGetNotifications(socket);
+              break;
+            case "get_badges":
+              await handleGetBadgeCounts(socket);
+              break;
             case "add_friend":
               await handleAddFriend(socket, data);
               break;
             case "request_public_key":
               await handlePublicKeyRequest(socket, data);
+              break;
+            case "get_direct_history":
+              await handleGetDirectHistory(socket, data);
+              break;
+            case "get_group_history":
+              await handleGetGroupHistory(socket, data);
               break;
             case "ping":
               socket.emit("pong", { timestamp: Date.now() });
@@ -453,14 +465,31 @@ async function handleGetContacts(socket: AuthenticatedSocket) {
       },
     });
 
-    const contacts = user?.Friends.map((f) => ({
-      id: f.friend.id,
-      armyId: f.friend.armyId,
-      name: f.friend.name,
-      designation: f.friend.designation,
-      publicKey: f.friend.keys[0]?.publicKey,
-      status: clients.has(f.friend.id) ? "online" : "offline",
-    }));
+    const contacts = await Promise.all(
+      (user?.Friends || []).map(async (f) => {
+        const lastMessage = await prisma.message.findFirst({
+          where: {
+            groupId: null,
+            OR: [
+              { senderId: socket.userId, recipientId: f.friend.id },
+              { senderId: f.friend.id, recipientId: socket.userId },
+            ],
+          },
+          orderBy: { timestamp: "desc" },
+        });
+
+        return {
+          id: f.friend.id,
+          armyId: f.friend.armyId,
+          name: f.friend.name,
+          designation: f.friend.designation,
+          publicKey: f.friend.keys[0]?.publicKey,
+          status: clients.has(f.friend.id) ? "online" : "offline",
+          lastMessage: lastMessage ? "Encrypted message" : "",
+          lastMessageTime: lastMessage?.timestamp.toISOString(),
+        };
+      }),
+    );
 
     socket.emit("contacts", { contacts });
   } catch (error) {
@@ -758,20 +787,31 @@ async function handleGetGroups(socket: AuthenticatedSocket) {
       },
     });
 
-    const groups = memberships.map((m) => ({
-      id: m.group.id,
-      name: m.group.name,
-      createdById: m.group.createdById,
-      role: m.role,
-      members: m.group.members.map((gm) => ({
-        id: gm.user.id,
-        armyId: gm.user.armyId,
-        name: gm.user.name,
-        designation: gm.user.designation,
-        publicKey: gm.user.keys[0]?.publicKey,
-        role: gm.role,
-      })),
-    }));
+    const groups = await Promise.all(
+      memberships.map(async (m) => {
+        const lastMessage = await prisma.message.findFirst({
+          where: { groupId: m.group.id },
+          orderBy: { timestamp: "desc" },
+        });
+
+        return {
+          id: m.group.id,
+          name: m.group.name,
+          createdById: m.group.createdById,
+          role: m.role,
+          lastMessage: lastMessage ? "Encrypted message" : "",
+          lastMessageTime: lastMessage?.timestamp.toISOString(),
+          members: m.group.members.map((gm) => ({
+            id: gm.user.id,
+            armyId: gm.user.armyId,
+            name: gm.user.name,
+            designation: gm.user.designation,
+            publicKey: gm.user.keys[0]?.publicKey,
+            role: gm.role,
+          })),
+        };
+      }),
+    );
 
     socket.emit("groups", { groups });
   } catch (error) {
@@ -1056,6 +1096,153 @@ async function handleGetCalls(socket: AuthenticatedSocket) {
   } catch (error) {
     logger.error("Error fetching call history:", error);
     socket.emit("error", { message: "Failed to fetch call history" });
+  }
+}
+
+// ==================== Notifications ====================
+async function handleGetNotifications(socket: AuthenticatedSocket) {
+  try {
+    if (!socket.userId) return;
+
+    const notifications = await prisma.notification.findMany({
+      where: { userId: socket.userId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    socket.emit("notifications_list", {
+      notifications: notifications.map((n) => ({
+        id: n.id,
+        type: "update",
+        title: "Notification",
+        message: n.message,
+        timestamp: n.createdAt.toISOString(),
+      })),
+    });
+  } catch (error) {
+    logger.error("Error fetching notifications:", error);
+    socket.emit("error", { message: "Failed to fetch notifications" });
+  }
+}
+
+// ==================== Tab Badge Counts ====================
+async function handleGetBadgeCounts(socket: AuthenticatedSocket) {
+  try {
+    if (!socket.userId) return;
+
+    const [chats, notifications] = await Promise.all([
+      prisma.message.count({
+        where: {
+          recipientId: socket.userId,
+          status: { not: "read" },
+        },
+      }),
+      prisma.notification.count({
+        where: { userId: socket.userId },
+      }),
+    ]);
+
+    socket.emit("badge_counts", { chats, notifications });
+  } catch (error) {
+    logger.error("Error fetching badge counts:", error);
+    socket.emit("error", { message: "Failed to fetch badge counts" });
+  }
+}
+
+// ==================== Direct Chat History ====================
+async function handleGetDirectHistory(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
+    }
+
+    if (!data.recipientId) {
+      return socket.emit("error", { message: "recipientId required" });
+    }
+
+    const messages = await prisma.message.findMany({
+      where: {
+        groupId: null,
+        OR: [
+          { senderId: socket.userId, recipientId: data.recipientId },
+          { senderId: data.recipientId, recipientId: socket.userId },
+        ],
+      },
+      include: {
+        sender: { select: { id: true, name: true, armyId: true } },
+      },
+      orderBy: { timestamp: "asc" },
+      take: 200,
+    });
+
+    socket.emit("direct_history", {
+      recipientId: data.recipientId,
+      messages: messages.map((m) => ({
+        messageId: m.id,
+        senderId: m.senderId,
+        senderName: m.sender?.name || m.sender?.armyId || "Unknown",
+        encryptedContent: m.encryptedContent,
+        encryptedKey: m.encryptedKey,
+        iv: m.iv,
+        timestamp: m.timestamp.getTime(),
+        status: m.status,
+      })),
+    });
+  } catch (error) {
+    logger.error("Error fetching direct history:", error);
+    socket.emit("error", { message: "Failed to fetch direct history" });
+  }
+}
+
+// ==================== Group Chat History ====================
+async function handleGetGroupHistory(socket: AuthenticatedSocket, data: any) {
+  try {
+    if (!socket.userId) {
+      return socket.emit("error", { message: "Not authenticated" });
+    }
+
+    if (!data.groupId) {
+      return socket.emit("error", { message: "groupId required" });
+    }
+
+    const membership = await prisma.groupMember.findUnique({
+      where: {
+        groupId_userId: { groupId: data.groupId, userId: socket.userId },
+      },
+    });
+
+    if (!membership) {
+      return socket.emit("error", {
+        message: "You are not a member of this group",
+      });
+    }
+
+    const messages = await prisma.message.findMany({
+      where: { groupId: data.groupId },
+      include: {
+        sender: { select: { id: true, name: true, armyId: true } },
+      },
+      orderBy: { timestamp: "asc" },
+      take: 200,
+    });
+
+    socket.emit("group_history", {
+      groupId: data.groupId,
+      messages: messages.map((m) => ({
+        messageId: m.id,
+        groupId: m.groupId,
+        senderId: m.senderId,
+        senderName: m.sender?.name || m.sender?.armyId || "Unknown",
+        encryptedContent: m.encryptedContent,
+        encryptedKeys: m.encryptedKeys,
+        iv: m.iv,
+        timestamp: m.timestamp.getTime(),
+        status: m.status,
+      })),
+    });
+  } catch (error) {
+    logger.error("Error fetching group history:", error);
+    socket.emit("error", { message: "Failed to fetch group history" });
   }
 }
 

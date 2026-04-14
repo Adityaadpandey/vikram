@@ -11,6 +11,7 @@ import {
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../contexts/ThemeContext";
+import { useUser } from "../contexts/UserContext";
 import { ApiService } from "../services/api/ApiService";
 import { SecureStorage } from "../services/security/SecureStorage";
 
@@ -18,6 +19,7 @@ export const OTPVerificationScreen: React.FC = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
+  const { loadProfile } = useUser();
   const { armyId, name, designation, phoneNumber, isRegistration, seedPhrase } =
     route.params;
 
@@ -100,15 +102,16 @@ export const OTPVerificationScreen: React.FC = () => {
 
         // Store session token and keys
         await SecureStorage.setToken(response.sessionToken);
-        await SecureStorage.setItem("userId", response.user.id);
-        await SecureStorage.setItem("publicKey", response.keys.publicKey);
-        await SecureStorage.setItem("privateKey", response.keys.privateKey);
-        await SecureStorage.setItem("armyId", response.user.armyId);
-        await SecureStorage.setItem("userName", response.user.name);
-        await SecureStorage.setItem(
-          "userDesignation",
-          response.user.designation,
-        );
+        await Promise.all([
+          SecureStorage.setUserId(response.user.id),
+          SecureStorage.setArmyId(response.user.armyId),
+          SecureStorage.setUserName(response.user.name || ""),
+          SecureStorage.setUserDesignation(response.user.designation || ""),
+          SecureStorage.setPhoneNumber(response.user.phone || phoneNumber),
+          SecureStorage.setPublicKey(response.keys.publicKey),
+          SecureStorage.setPrivateKey(response.keys.privateKey),
+        ]);
+        await loadProfile();
         console.log(
           "✅ Credentials stored, token:",
           response.sessionToken.substring(0, 20) + "...",

@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { View, Text, TouchableOpacity, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ChatsListScreen } from "../screens/tabs/ChatsListScreen";
 import { CallsListScreen } from "../screens/tabs/CallsListScreen";
 import { NotificationsScreen } from "../screens/tabs/NotificationsScreen";
+import { WebSocketService } from "../services/api/WebSocketService";
 import { useTheme } from "../contexts/ThemeContext";
 
 const Tab = createBottomTabNavigator();
@@ -49,6 +50,56 @@ const CustomTabBarButton: React.FC<CustomTabBarButtonProps> = ({
 
 export const TabNavigator: React.FC = () => {
   const { theme, isDark } = useTheme();
+  const [chatBadgeCount, setChatBadgeCount] = useState(0);
+  const [notificationBadgeCount, setNotificationBadgeCount] = useState(0);
+
+  useEffect(() => {
+    const syncBadgeCounts = async () => {
+      try {
+        await WebSocketService.connect();
+        await WebSocketService.getBadgeCounts();
+      } catch (error) {
+        console.error("Failed to sync tab badges:", error);
+      }
+    };
+
+    void syncBadgeCounts();
+
+    const offCounts = WebSocketService.onBadgeCounts((counts) => {
+      setChatBadgeCount(counts.chats || 0);
+      setNotificationBadgeCount(counts.notifications || 0);
+    });
+
+    const refreshOnMessage = () => {
+      void WebSocketService.getBadgeCounts();
+    };
+
+    const offDirect = WebSocketService.onMessage(refreshOnMessage);
+    const offGroup = WebSocketService.onGroupMessage(refreshOnMessage);
+
+    return () => {
+      offCounts?.();
+      offDirect?.();
+      offGroup?.();
+    };
+  }, []);
+
+  const renderBadge = (count: number) => {
+    if (!count) return null;
+
+    return (
+      <View
+        className="absolute -top-1 -right-2 rounded-full min-w-[18px] h-[18px] items-center justify-center px-1"
+        style={{
+          backgroundColor: theme.colors.accent,
+        }}
+      >
+        <Text className="text-white text-[10px] font-bold">
+          {count > 99 ? "99+" : count}
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <Tab.Navigator
@@ -91,14 +142,7 @@ export const TabNavigator: React.FC = () => {
                 size={24}
                 color={color}
               />
-              <View
-                className="absolute -top-1 -right-2 rounded-full min-w-[18px] h-[18px] items-center justify-center px-1"
-                style={{
-                  backgroundColor: theme.colors.accent,
-                }}
-              >
-                <Text className="text-white text-[10px] font-bold">3</Text>
-              </View>
+              {renderBadge(chatBadgeCount)}
             </View>
           ),
         }}
@@ -114,14 +158,7 @@ export const TabNavigator: React.FC = () => {
                 size={24}
                 color={color}
               />
-              <View
-                className="absolute -top-1 -right-2 rounded-full min-w-[18px] h-[18px] items-center justify-center px-1"
-                style={{
-                  backgroundColor: theme.colors.accent,
-                }}
-              >
-                <Text className="text-white text-[10px] font-bold">2</Text>
-              </View>
+              {renderBadge(notificationBadgeCount)}
             </View>
           ),
         }}

@@ -30,9 +30,35 @@ export const CallsListScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    WebSocketService.getCalls();
-    const cleanup = WebSocketService.onCalls((fetchedCalls: Call[]) => {
-      setCalls(fetchedCalls);
+    const initCalls = async () => {
+      try {
+        await WebSocketService.connect();
+        WebSocketService.startHeartbeat();
+        await WebSocketService.getCalls();
+      } catch (error) {
+        console.error("Failed to load calls:", error);
+      }
+    };
+
+    void initCalls();
+
+    const cleanup = WebSocketService.onCalls((fetchedCalls: any[]) => {
+      const formatted: Call[] = fetchedCalls.map((call) => {
+        const durationSeconds =
+          typeof call.duration === "number" ? call.duration : undefined;
+        const duration =
+          durationSeconds !== undefined
+            ? `${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s`
+            : undefined;
+
+        return {
+          ...call,
+          timestamp: new Date(call.timestamp).toLocaleString(),
+          duration,
+        };
+      });
+
+      setCalls(formatted);
     });
     return cleanup;
   }, []);
